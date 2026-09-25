@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: warrenament
+
+  config:
+    # Loads backend/.env as a properties file if it exists, so secrets can live in a
+    # gitignored file instead of your shell. `optional:` means a missing file is fine;
+    # `[.properties]` tells Boot how to parse an extensionless one.
+    import: optional:file:.env[.properties]
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema. Hibernate only checks the mapping matches it.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+
+  security:
+    oauth2:
+      client:
+        registration:
+          discord:
+            client-id: ${DISCORD_CLIENT_ID:not-configured}
+            client-secret: ${DISCORD_CLIENT_SECRET:not-configured}
+            client-name: Discord
+            authorization-grant-type: authorization_code
+            # Must be literal, not "{baseUrl}": the browser reaches us through the
+            # Next.js proxy, which rewrites Host to :8080, so {baseUrl} would send
+            # users to the backend instead of the frontend - and would not match the
+            # URI registered with Discord. A literal value is also reused unchanged
+            # for the token exchange, which Discord requires.
+            redirect-uri: ${FRONTEND_URL:http://localhost:3000}/login/oauth2/code/discord
+            scope: identify
+        provider:
+          discord:
+            authorization-uri: https://discord.com/api/oauth2/authorize
+            token-uri: https://discord.com/api/oauth2/token
+            user-info-uri: https://discord.com/api/users/@me
+            # Discord returns the account id as "id"; it is our stable external key.
+            user-name-attribute: id
+
+app:
+  # Where a successful Discord login returns the browser.
+  frontend-url: ${FRONTEND_URL:http://localhost:3000}
+  auth:
+    # Comma-separated Discord ids promoted to ADMIN on login. Put your own id here.
+    admin-discord-ids: ${ADMIN_DISCORD_IDS:}
+  auction:
+    # How often the sweeper looks for lots whose timer has run out.
+    sweep-interval-ms: 500
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.warren.warrenament: DEBUG

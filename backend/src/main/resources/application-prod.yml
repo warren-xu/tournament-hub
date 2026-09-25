@@ -1,0 +1,29 @@
+# Activate with SPRING_PROFILES_ACTIVE=prod. Deployed on a 1 GB Oracle VM behind Caddy,
+# talking to Neon; secrets come from the systemd environment file, never from here.
+
+spring:
+  datasource:
+    hikari:
+      # Neon's free tier caps connections, and one auction never needs many.
+      maximum-pool-size: 5
+      minimum-idle: 1
+      # Neon suspends an idle database; the first connection after that takes a moment.
+      connection-timeout: 20000
+
+server:
+  # Caddy terminates TLS and forwards X-Forwarded-* headers.
+  forward-headers-strategy: native
+  servlet:
+    session:
+      cookie:
+        # The cookie reaches browsers through the frontend's HTTPS proxy.
+        secure: true
+  tomcat:
+    # A handful of captains and spectators, on 1/8 of a CPU.
+    threads:
+      max: 20
+
+logging:
+  level:
+    # application.yml sets DEBUG for development.
+    com.warren.warrenament: INFO

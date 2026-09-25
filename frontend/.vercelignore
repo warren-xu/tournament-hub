@@ -1,0 +1,5 @@
+# Local env files must never reach a deploy: .env.local turns on the dev sign-in panel.
+.env*
+!.env.example
+node_modules
+.next

@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+/* Slate surfaces, readable neutral text, and coral reserved for priority. */
+@theme {
+  --color-ink: #202a34;
+  --color-panel: #2b3743;
+  --color-raise: #354350;
+  --color-line: #52616e;
+  --color-line-soft: #414f5c;
+  --color-bone: #f2f3ef;
+  --color-muted: #bdc8d0;
+  --color-dim: #a9b6c1;
+  --color-signal: #ff9da5;
+  --color-accent: #c93647;
+  --color-accent-deep: #a52a39;
+
+  --font-display: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-ink);
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-ink);
+    color: var(--color-bone);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Condensed grotesk, tight tracking, uppercase: the Valorant register without
+     resorting to a novelty display face. */
+  h1, h2, h3, .display {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  /* Numbers that change in place - budgets, bids, countdowns - must not reflow. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  ::selection {
+    background: var(--color-accent);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-signal);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-ink);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line);
+    border: 2px solid var(--color-ink);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-dim);
+  }
+}
+
+@layer utilities {
+  /* The one angular flourish: a clipped corner, used on the lot card and primary
+     buttons only. Any more and it turns into costume. */
+  .corner-cut {
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+  }
+  .corner-cut-sm {
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
+  }
+
+  /* Section label: small, spaced, muted. Used instead of decorative headers. */
+  .eyebrow {
+    font-family: var(--font-display);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-dim);
+  }
+
+  .rule {
+    border-color: var(--color-line-soft);
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.live-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.player-showcase { min-width: 0; }
+.showcase-identity { background: var(--color-ink); border: 1px solid var(--color-line-soft); border-top: 2px solid var(--color-line); }
+.rank-portrait { position: relative; display: block; width: 100%; aspect-ratio: 1; background: var(--rank-color); }
+.rank-portrait-inner { position: absolute; inset: 4px; display: block; background: var(--color-raise); overflow: hidden; }
+.rank-portrait-fallback { position: absolute; inset: 0; display: grid; place-items: center; padding-top: 12%; font-family: var(--font-display); font-size: 32px; color: var(--color-bone); }
+/* Agent art is transparent, so initials behind it would show through. Failed images unmount, which brings them back. */
+.rank-portrait-inner:has(.rank-portrait-agent) .rank-portrait-fallback { display: none; }
+.rank-portrait-art { object-fit: cover; opacity: .45; }
+.rank-portrait-agent { object-fit: contain; padding: 16%; }
+
+.agent-portrait-frame { position: absolute; inset: 0; }
+/* The crop fills the whole card, so the body runs out past the square's edges. */
+.agent-portrait-crop { position: absolute; inset: 0; overflow: hidden; }
+/* A 540px square, 130px down the shared 2048×1860 canvas (see lib/portrait-crop.ts); --crop-left is measured per agent. Hidden until measured so it never jumps. */
+.agent-portrait-source { position: absolute; max-width: none; width: 379.2593%; height: 344.4444%; top: -24.0741%; left: calc(var(--crop-left) * -379.2593%); opacity: 0; }
+.agent-portrait-source[data-measured="true"] { opacity: 1; }
+/* The full card keeps the crop's width and top, and runs about 1290px down the canvas instead of 540px. */
+.rank-portrait[data-shape="card"] { aspect-ratio: 268 / 640; }
+.rank-portrait[data-shape="card"] .agent-portrait-source { height: 144.2361%; top: -10.0810%; }
+
+/* The button hit area and physics collider are the same square as the card. */
+.virtual-pool { border: 1px solid var(--color-line-soft); background: var(--color-panel); scroll-margin-top: 140px; }
+.pool-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; padding: 20px; }
+.pool-arena { --pool-card-size: 176px; position: relative; min-height: 520px; margin: 16px; overflow: hidden; border: 1px solid var(--color-line); background: var(--color-ink); isolation: isolate; }
+.pool-body { position: absolute; top: 0; left: 0; width: var(--pool-card-size); height: var(--pool-card-size); pointer-events: none; will-change: transform; }
+.pool-body:has(:focus-visible), .pool-body:hover { z-index: 2; }
+.pool-tile { position: relative; display: flex; flex-direction: column; align-items: center; width: 100%; height: 100%; background: transparent; border: 0; padding: 0; pointer-events: auto; text-align: center; cursor: grab; user-select: none; touch-action: pan-y; }
+.pool-arena[data-touch-drag="true"] .pool-tile { touch-action: none; }
+.pool-tile:active { cursor: grabbing; }
+.pool-tile:focus-visible { outline: none; }
+.pool-tile:focus-visible .rank-portrait { background: var(--color-bone); }
+.pool-tile:focus-visible .rank-portrait-inner { inset: 7px; }
+.pool-tile > .rank-portrait { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* A solid strip along the bottom edge keeps the name off the agent’s face. */
+.pool-tile-identity { position: absolute; right: 4px; bottom: 4px; left: 4px; display: flex; flex-direction: column; padding: 4px 8px; background: var(--color-ink); line-height: 1.25; text-align: left; pointer-events: none; }
+.pool-tile-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: 18px; color: var(--color-bone); }
+.pool-tile-identity > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.pool-tile-identity .pool-agent { color: var(--agent-color); }
+.pool-tile-identity .pool-rank { color: var(--rank-color); }
+.pool-tile:hover .pool-tile-identity strong { text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 600px) {
+  .pool-toolbar { padding: 16px; }
+  .pool-arena { margin: 10px; }
+  .pool-tile-identity strong { font-size: 14px; }
+  .pool-tile-identity > span { font-size: 10px; }
+}
+.pool-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  padding: 16px;
+  width: min(332px, 100vw);
+  max-width: 100vw;
+  max-height: 94dvh;
+  overflow: auto;
+  border: 0;
+  background: transparent;
+  color: var(--color-bone);
+}
+.pool-dialog::backdrop { background: #060a10cf; backdrop-filter: blur(8px); }
+.pool-dialog-content { position: relative; animation: pool-reveal 220ms ease-out; }
+
+.pool-dialog-close { position: absolute; top: 10px; right: 10px; z-index: 40; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #bdc8d060; border-radius: 50%; background: #202a34e6; cursor: pointer; }
+body:has(.pool-dialog[open]) { overflow: hidden; }
+@keyframes pool-reveal { from { opacity: 0; transform: scale(.9) translateY(12px); } to { opacity: 1; transform: none; } }
+/* The reveal: bids drop in one after another rather than all at once, so the room
+   reads them in order instead of seeing a wall of numbers. */
+.bid-reveal {
+  animation: bid-reveal 320ms ease-out both;
+}
+@keyframes bid-reveal {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The end-of-auction draw. The blur while spinning is what sells it as motion rather
+   than a name that keeps changing its mind. */
+.roulette-slot {
+  transition: filter 220ms ease-out, transform 220ms ease-out;
+  filter: blur(0.6px);
+}
+.roulette-landed {
+  filter: none;
+  transform: scale(1.06);
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bid-reveal { animation: none; }
+  .roulette-slot { filter: none; transition: none; }
+  .roulette-landed { transform: none; }
+}
+
+/* Long player and team names in the draft room wrap instead of overflowing. */
+.auction-room h2 { overflow-wrap: anywhere; }
+
+@layer base {
+  button, summary, a, input, select { -webkit-tap-highlight-color: transparent; }
+  button, summary, select, input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; }
+  summary { cursor: pointer; }
+  h1, h2, h3 { overflow-wrap: anywhere; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pool-dialog-content { animation: none; }
+}

@@ -1,0 +1,8 @@
+# Activate with: SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
+#
+# Enables POST /api/dev/login?username=X&admin=true, which mints a session without Discord.
+# Needed to drive an auction from several browser windows as different captains.
+logging:
+  level:
+    com.warren.warrenament.auction: DEBUG
+    org.springframework.web.socket: INFO
