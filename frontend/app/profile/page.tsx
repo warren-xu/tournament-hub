@@ -9,7 +9,7 @@ import {
   getPlayerCards,
 } from "@/lib/server-api";
 
-export const metadata = { title: "My profile — Warrenament" };
+export const metadata = { title: "My profile - Warrenament" };
 
 export default async function ProfilePage() {
   const online = await backendReachable();

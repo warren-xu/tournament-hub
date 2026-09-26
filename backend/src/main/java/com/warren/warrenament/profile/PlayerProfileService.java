@@ -95,6 +95,7 @@ public class PlayerProfileService {
         profile.setMainAgent(mainAgent);
         profile.setRiotId(request.riotId());
         profile.setCurrentRank(request.currentRank());
+        profile.setPeakRank(request.peakRank());
         profile.setPrimaryRole(request.primaryRole());
         profile.setSecondaryRole(request.secondaryRole());
         profile.setBio(request.bio());

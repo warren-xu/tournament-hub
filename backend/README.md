@@ -39,6 +39,7 @@ DISCORD_CLIENT_ID=...
 DISCORD_CLIENT_SECRET=...
 ADMIN_DISCORD_IDS=your_discord_id   # promotes you to ADMIN on login
 FRONTEND_URL=http://localhost:3000
+HENRIK_API_KEY=...                 # optional: "fill in from a match" on /profile
 ```
 
 It is parsed as a **properties** file, so no `export`, and no quotes around values —
@@ -60,16 +61,51 @@ profile.
 
 ## Frontend wiring
 
-Next.js runs on `:3000` and proxies `/api/*`, `/oauth2/*`, `/login/*` and `/ws` to `:8080`.
-That makes everything same-origin, so the session cookie works on both REST calls and the
-WebSocket handshake — no CORS config and no token handling in the browser.
+Next.js proxies `/api/*`, `/oauth2/*` and `/login/*` to the backend (`BACKEND_URL`), so REST
+calls are same-origin and the session cookie rides along with no CORS config.
 
-```ts
-// next.config.ts
-async rewrites() {
-  return [{ source: '/:path(api|oauth2|login|ws)/:rest*', destination: 'http://localhost:8080/:path/:rest*' }];
-}
+The auction WebSocket (`/ws`) cannot go through that proxy, so the browser connects to the
+backend directly (`NEXT_PUBLIC_WS_URL`). Deployed, the backend is a different site from the
+frontend and the cookie never reaches it, so a bidder first calls `POST /api/ws-ticket`
+(through the proxy, cookie included) and sends the single-use, 60-second ticket in the STOMP
+`CONNECT` frame. Without a ticket the socket can still watch, but cannot bid.
+
+## Deploying
+
+Everything runs on free tiers:
+
+| Piece | Host |
+|---|---|
+| Frontend | Vercel (`frontend/`, default `*.vercel.app` domain) |
+| Backend | A 1 GB Oracle Cloud VM, run by systemd behind Caddy |
+| HTTPS for the backend | Caddy with a Let's Encrypt certificate for `<vm-ip-with-dashes>.sslip.io` |
+| Postgres | Neon (direct connection, not the pooled one) |
+
+### Configuration
+
+Secrets live only in `/etc/warrenament.env` on the VM (owned by root, mode `600`), never in
+the repo.
+
+To add or change a value:
+
+```bash
+sudo nano /etc/warrenament.env        # one KEY=value per line, no quotes, no spaces around =
+sudo systemctl restart warrenament
 ```
+
+### Releasing a new backend
+
+Build on your own machine (Maven needs more memory than the VM has), copy the jar over, and
+restart. Flyway applies any new migrations on startup.
+
+Startup takes a minute or two on the VM's fraction of a CPU. To check on it:
+
+```bash
+journalctl -u warrenament -f                 # follow the log
+curl -s localhost:8080/actuator/health       # on the VM: {"status":"UP"}
+```
+
+The frontend deploys separately with `npx vercel --prod` from `frontend/`.
 
 ## API
 
@@ -77,6 +113,7 @@ async rewrites() {
 |---|---|---|
 | `GET` | `/api/me` | anyone (204 when signed out) |
 | `GET PUT` | `/api/profiles/me` | signed in |
+| `POST` | `/api/profiles/me/import` | signed in — suggests fields from a Riot ID's recent competitive games via HenrikDev; saves nothing |
 | `DELETE` | `/api/profiles/{id}` | admin — hard delete, for clearing test players |
 | `GET` | `/api/profiles`, `/api/profiles/{id}` | anyone |
 | `POST` | `/api/tournaments` | admin |

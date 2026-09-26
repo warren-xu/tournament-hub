@@ -6,8 +6,8 @@ import type { Me } from "@/lib/types";
 import { Avatar } from "./ui";
 
 const NAV = [
-  { href: "/", label: "Tournaments" },
-  { href: "/players", label: "Players" },
+  { href: "/", label: "Players" },
+  { href: "/tournaments", label: "Tournaments" },
   { href: "/profile", label: "My Profile" },
 ];
 
@@ -31,8 +31,10 @@ export function SiteHeader({ me }: { me: Me | null }) {
           {nav.map((item) => {
             const active =
               item.href === "/"
-                ? pathname === "/" || pathname.startsWith("/t/")
-                : pathname.startsWith(item.href);
+                ? pathname === "/"
+                : item.href === "/tournaments"
+                  ? pathname.startsWith("/tournaments") || pathname.startsWith("/t/")
+                  : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}

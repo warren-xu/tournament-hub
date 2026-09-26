@@ -44,6 +44,6 @@ class PlayerCardTest {
 
     private UpdateProfileRequest request(String mainAgent, Set<String> agents) {
         return new UpdateProfileRequest("player#test", "Gold 2",
-                null, null, null, agents, mainAgent, null);
+                null, null, null, agents, mainAgent, null, null);
     }
 }

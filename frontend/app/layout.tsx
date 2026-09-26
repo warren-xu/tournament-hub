@@ -37,7 +37,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <footer className="border-t border-line-soft py-6">
           <div className="mx-auto max-w-[1400px] px-6">
             <p className="text-xs text-dim">
-              Warrenament — not affiliated with Riot Games.
+              Not affiliated with Riot Games (Please do not sue)
             </p>
           </div>
         </footer>

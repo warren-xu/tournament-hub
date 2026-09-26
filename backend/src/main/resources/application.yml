@@ -51,6 +51,8 @@ app:
   auth:
     # Comma-separated Discord ids promoted to ADMIN on login. Put your own id here.
     admin-discord-ids: ${ADMIN_DISCORD_IDS:}
+  henrik:
+    api-key: ${HENRIK_API_KEY:}
   auction:
     # How often the sweeper looks for lots whose timer has run out.
     sweep-interval-ms: 500

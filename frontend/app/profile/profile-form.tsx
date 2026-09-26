@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { buttonClass } from "@/components/ui";
 import { api, ApiCallError } from "@/lib/client-api";
-import type { AgentView, ProfileView, RankView, PlayerCardView } from "@/lib/types";
+import type { AgentView, ProfileImport, ProfileView, RankView, PlayerCardView } from "@/lib/types";
 import {
   groupByDivision,
   groupByRole,
@@ -33,6 +33,7 @@ export function ProfileForm({
   const router = useRouter();
   const [riotId, setRiotId] = useState(initial?.riotId ?? "");
   const [currentRank, setCurrentRank] = useState(initial?.currentRank ?? "");
+  const [peakRank, setPeakRank] = useState(initial?.peakRank ?? "");
   const [primaryRole, setPrimaryRole] = useState(initial?.primaryRole ?? "");
   const [secondaryRole, setSecondaryRole] = useState(initial?.secondaryRole ?? "");
   const [bio, setBio] = useState(initial?.bio ?? "");
@@ -40,6 +41,7 @@ export function ProfileForm({
   const [mainAgent, setMainAgent] = useState(initial?.mainAgent ?? "");
   const [playerCard, setPlayerCard] = useState<PlayerCardView | null>(initial?.playerCard ?? null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [importing, setImporting] = useState<Status>({ kind: "idle" });
 
   const byRole = groupByRole(agents);
   const byDivision = groupByDivision(ranks);
@@ -56,6 +58,41 @@ export function ProfileForm({
     );
   }
 
+  /** Fills the form from the Riot ID's recent games. Nothing is saved until "Save card". */
+  async function importFromRiotId() {
+    if (!riotId.trim()) return;
+    setImporting({ kind: "saving" });
+    try {
+      const result = await api<ProfileImport>("/api/profiles/me/import", {
+        method: "POST",
+        json: { riotId: riotId.trim() },
+      });
+      if (result.riotId) setRiotId(result.riotId);
+      if (result.currentRank) setCurrentRank(result.currentRank);
+      if (result.peakRank) setPeakRank(result.peakRank);
+      const equipped = playerCards.find((card) => card.id === result.playerCardId);
+      if (equipped) setPlayerCard(equipped);
+      if (result.primaryRole) setPrimaryRole(result.primaryRole);
+      if (result.secondaryRole) setSecondaryRole(result.secondaryRole);
+      // Adds to the pool rather than replacing it: recent games miss agents people still play.
+      setSelected((current) => [...result.agents, ...current.filter((a) => !result.agents.includes(a))]);
+      if (result.mainAgent) setMainAgent(result.mainAgent);
+      setStatus({ kind: "idle" });
+      const n = result.matchesAnalyzed;
+      setImporting({
+        kind: "saved",
+        message: n === 0
+          ? "No recent competitive matches found, so your agents and roles are still up to you. Check the rest, then save your card."
+          : `Filled in from ${n} recent competitive ${n === 1 ? "match" : "matches"}. Check it over, then save your card.`,
+      });
+    } catch (err) {
+      setImporting({
+        kind: "error",
+        message: err instanceof ApiCallError ? err.message : "Could not look up that Riot ID.",
+      });
+    }
+  }
+
   async function save(event: React.FormEvent) {
     event.preventDefault();
     setStatus({ kind: "saving" });
@@ -65,6 +102,7 @@ export function ProfileForm({
         json: {
           riotId: riotId.trim() || null,
           currentRank: currentRank || null,
+          peakRank: peakRank || null,
           primaryRole: primaryRole || null,
           secondaryRole: secondaryRole || null,
           bio: bio.trim() || null,
@@ -92,26 +130,67 @@ export function ProfileForm({
             so the preview would look softer than the real thing on the players page. */}
         <div className="w-full max-w-67">
           <PlayerCard username={username} riotId={riotId} mainAgent={mainAgent}
-            currentRank={currentRank} agents={agents} ranks={ranks} playerCard={playerCard} />
+            currentRank={currentRank} peakRank={peakRank} agents={agents} ranks={ranks} playerCard={playerCard} />
           <p className="mt-3 text-xs text-muted">Choose your artwork, main agent and rank to make it yours. Save your card to share it with captains.</p>
         </div>
       </aside>
       <div className="space-y-8 lg:col-start-1 lg:row-start-1">
-        <Field label="Riot ID" hint="Name and tagline, e.g. boombot#asked">
-          <input
-            value={riotId}
-            onChange={(e) => setRiotId(e.target.value)}
-            placeholder="boombot#asked"
-            maxLength={64}
-            className={inputClass}
-          />
-        </Field>
+        {/* Not the shared Field: that wraps everything in a <label>, and a button may not
+            sit inside another control's label. */}
+        <div>
+          <span className="flex items-baseline justify-between">
+            <label htmlFor="riot-id" className="eyebrow">Riot ID</label>
+            <span className="tabular text-xs text-dim">Name and tagline, e.g. boombot#asked</span>
+          </span>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <input
+              id="riot-id"
+              value={riotId}
+              onChange={(e) => {
+                setRiotId(e.target.value);
+                setImporting({ kind: "idle" });
+              }}
+              maxLength={64}
+              aria-describedby="riot-id-fill"
+              // Firefox restores typed text and button states on reload, behind React's back.
+              autoComplete="off"
+              className={inputClass}
+            />
+            <button
+              type="button"
+              onClick={() => void importFromRiotId()}
+              disabled={!riotId.trim() || importing.kind === "saving"}
+              {...NO_FORM_RESTORE}
+              className={buttonClass("default", "shrink-0")}
+            >
+              {importing.kind === "saving" ? "Looking up…" : "Auto-fill"}
+            </button>
+          </div>
+          <p id="riot-id-fill" aria-live="polite" className="mt-2 text-xs leading-relaxed">
+            {importing.kind === "saved" ? <span className="text-muted">{importing.message}</span> : null}
+            {importing.kind === "error" ? <span className="text-signal">{importing.message}</span> : null}
+            {importing.kind === "idle" || importing.kind === "saving" ? (
+              <span className="text-muted">
+                Fill in sets your rank, peak rank, agents, roles and in-game player card from
+                your recent competitive games.
+              </span>
+            ) : null}
+          </p>
+        </div>
 
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Current rank">
             <RankSelect
               value={currentRank}
               onChange={setCurrentRank}
+              ranks={ranks}
+              groups={byDivision}
+            />
+          </Field>
+          <Field label="Peak rank">
+            <RankSelect
+              value={peakRank}
+              onChange={setPeakRank}
               ranks={ranks}
               groups={byDivision}
             />
@@ -245,6 +324,13 @@ export function ProfileForm({
     </form>
   );
 }
+
+/**
+ * Firefox restores a button's enabled state on reload unless told not to, which leaves
+ * the DOM disagreeing with React. React's types omit autoComplete on buttons, though the
+ * attribute is valid there, hence the spread.
+ */
+const NO_FORM_RESTORE = { autoComplete: "off" };
 
 const inputClass =
   "w-full border border-line bg-ink px-3 py-2.5 text-sm text-bone placeholder:text-dim focus:border-accent focus:outline-none";

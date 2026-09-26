@@ -144,6 +144,6 @@ class PlayerCardCatalogTest {
     }
 
     private UpdateProfileRequest request(Long cardId) {
-        return new UpdateProfileRequest("card#test", null, null, null, null, Set.of(), null, cardId);
+        return new UpdateProfileRequest("card#test", null, null, null, null, Set.of(), null, cardId, null);
     }
 }

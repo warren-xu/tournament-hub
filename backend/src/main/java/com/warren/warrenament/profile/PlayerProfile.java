@@ -45,6 +45,9 @@ public class PlayerProfile {
     @Column(name = "current_rank")
     private String currentRank;
 
+    @Column(name = "peak_rank")
+    private String peakRank;
+
     @Column(name = "primary_role")
     private String primaryRole;
 

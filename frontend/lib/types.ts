@@ -75,6 +75,21 @@ export interface ProfileView {
   agents: string[];
   mainAgent: string | null;
   playerCard: PlayerCardView | null;
+  /** Highest rank reached; shown beside the current one. */
+  peakRank: string | null;
+}
+
+/** Suggested profile values from a Riot ID's recent games */
+export interface ProfileImport {
+  riotId: string | null;
+  currentRank: string | null;
+  peakRank: string | null;
+  playerCardId: number | null;
+  mainAgent: string | null;
+  agents: string[];
+  primaryRole: string | null;
+  secondaryRole: string | null;
+  matchesAnalyzed: number;
 }
 
 export interface TournamentView {

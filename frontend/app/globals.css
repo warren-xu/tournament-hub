@@ -107,7 +107,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .live-dot {
+  .live-dot, .pool-hint {
     animation: none;
   }
   *, *::before, *::after {
@@ -116,6 +116,15 @@
 }
 
 .player-showcase { min-width: 0; }
+/* A player opened from the pool: card on the left, stats on the right; stacked on phones. */
+.player-showcase-split { display: grid; }
+.player-showcase-split > :first-child { width: 100%; max-width: 300px; margin-inline: auto; }
+.showcase-stats { border: 1px solid var(--color-line-soft); background: var(--color-panel); padding: 24px 20px; }
+@media (min-width: 640px) {
+  .player-showcase-split { grid-template-columns: 268px minmax(0, 1fr); }
+  .player-showcase-split > :first-child { max-width: none; }
+  .showcase-stats { border-left: 0; padding-top: 64px; }
+}
 .showcase-identity { background: var(--color-ink); border: 1px solid var(--color-line-soft); border-top: 2px solid var(--color-line); }
 .rank-portrait { position: relative; display: block; width: 100%; aspect-ratio: 1; background: var(--rank-color); }
 .rank-portrait-inner { position: absolute; inset: 4px; display: block; background: var(--color-raise); overflow: hidden; }
@@ -138,9 +147,24 @@
 /* The button hit area and physics collider are the same square as the card. */
 .virtual-pool { border: 1px solid var(--color-line-soft); background: var(--color-panel); scroll-margin-top: 140px; }
 .pool-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; padding: 20px; }
-.pool-arena { --pool-card-size: 176px; position: relative; min-height: 520px; margin: 16px; overflow: hidden; border: 1px solid var(--color-line); background: var(--color-ink); isolation: isolate; }
+.pool-arena { --pool-card-size: 123px; position: relative; min-height: 520px; margin: 16px; overflow: hidden; border: 1px solid var(--color-line); background: var(--color-ink); isolation: isolate; }
 .pool-body { position: absolute; top: 0; left: 0; width: var(--pool-card-size); height: var(--pool-card-size); pointer-events: none; will-change: transform; }
 .pool-body:has(:focus-visible), .pool-body:hover { z-index: 2; }
+/* "Drag me!" rides on its card; above it normally, below it when the card hugs the top edge. */
+.pool-body:has(.pool-hint) { z-index: 3; }
+.pool-hint { position: absolute; bottom: calc(100% + 10px); left: 50%; padding: 6px 12px; background: var(--color-bone); color: var(--color-ink); font-family: var(--font-display); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; pointer-events: none; transform: translateX(-50%); animation: pool-hint-bob 1.6s ease-in-out infinite; }
+.pool-hint::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -6px; border: 6px solid transparent; border-top-color: var(--color-bone); }
+.pool-body[data-hint-below="true"] .pool-hint { top: calc(100% + 10px); bottom: auto; }
+.pool-body[data-hint-below="true"] .pool-hint::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--color-bone); }
+@keyframes pool-hint-bob { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, -4px); } }
+
+.suggestions-toggle { position: fixed; right: 16px; bottom: 16px; z-index: 40; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--color-line); background: var(--color-panel); color: var(--color-bone); font-size: 13px; cursor: pointer; }
+.suggestions-toggle:hover { border-color: var(--color-dim); }
+.suggestions-toggle:focus-visible { outline: 2px solid var(--color-signal); outline-offset: 2px; }
+.suggestions-toggle-track { position: relative; width: 36px; height: 20px; border: 1px solid var(--color-line); background: var(--color-ink); transition: background-color 150ms; }
+.suggestions-toggle-knob { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: var(--color-muted); transition: transform 150ms, background-color 150ms; }
+.suggestions-toggle[aria-checked="true"] .suggestions-toggle-track { border-color: var(--color-accent); background: var(--color-accent); }
+.suggestions-toggle[aria-checked="true"] .suggestions-toggle-knob { background: var(--color-bone); transform: translateX(16px); }
 .pool-tile { position: relative; display: flex; flex-direction: column; align-items: center; width: 100%; height: 100%; background: transparent; border: 0; padding: 0; pointer-events: auto; text-align: center; cursor: grab; user-select: none; touch-action: pan-y; }
 .pool-arena[data-touch-drag="true"] .pool-tile { touch-action: none; }
 .pool-tile:active { cursor: grabbing; }
@@ -150,7 +174,7 @@
 .pool-tile > .rank-portrait { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* A solid strip along the bottom edge keeps the name off the agent’s face. */
 .pool-tile-identity { position: absolute; right: 4px; bottom: 4px; left: 4px; display: flex; flex-direction: column; padding: 4px 8px; background: var(--color-ink); line-height: 1.25; text-align: left; pointer-events: none; }
-.pool-tile-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: 18px; color: var(--color-bone); }
+.pool-tile-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: 14px; color: var(--color-bone); }
 .pool-tile-identity > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .pool-tile-identity .pool-agent { color: var(--agent-color); }
 .pool-tile-identity .pool-rank { color: var(--rank-color); }
@@ -158,7 +182,7 @@
 @media (max-width: 600px) {
   .pool-toolbar { padding: 16px; }
   .pool-arena { margin: 10px; }
-  .pool-tile-identity strong { font-size: 14px; }
+  .pool-tile-identity strong { font-size: 12px; }
   .pool-tile-identity > span { font-size: 10px; }
 }
 .pool-dialog {
@@ -166,7 +190,7 @@
   inset: 0;
   margin: auto;
   padding: 16px;
-  width: min(332px, 100vw);
+  width: min(760px, 100vw);
   max-width: 100vw;
   max-height: 94dvh;
   overflow: auto;

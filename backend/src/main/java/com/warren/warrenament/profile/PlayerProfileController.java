@@ -3,6 +3,8 @@ package com.warren.warrenament.profile;
 import com.warren.warrenament.auth.AppUser;
 import com.warren.warrenament.profile.PlayerProfileDtos.ProfileView;
 import com.warren.warrenament.profile.PlayerProfileDtos.UpdateProfileRequest;
+import com.warren.warrenament.profile.ProfileImportService.ImportRequest;
+import com.warren.warrenament.profile.ProfileImportService.ImportView;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -10,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,9 +25,11 @@ import java.util.List;
 public class PlayerProfileController {
 
     private final PlayerProfileService service;
+    private final ProfileImportService importer;
 
-    public PlayerProfileController(PlayerProfileService service) {
+    public PlayerProfileController(PlayerProfileService service, ProfileImportService importer) {
         this.service = service;
+        this.importer = importer;
     }
 
     @GetMapping
@@ -41,6 +46,12 @@ public class PlayerProfileController {
     public ProfileView updateMe(@AuthenticationPrincipal AppUser user,
                                 @Valid @RequestBody UpdateProfileRequest request) {
         return service.updateMine(user.userId(), request);
+    }
+
+    /** Suggests field values from a Riot ID's recent competitive games. Saves nothing. */
+    @PostMapping("/me/import")
+    public ImportView importFromRiotId(@Valid @RequestBody ImportRequest request) {
+        return importer.importFromRiotId(request);
     }
 
     @GetMapping("/{id}")

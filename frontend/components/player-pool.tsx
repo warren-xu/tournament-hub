@@ -4,10 +4,20 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerE
 import { PlayerCard } from "@/components/player-card";
 import { RankPortrait } from "@/components/rank-portrait";
 import { buttonClass } from "@/components/ui";
+import { SuggestionsToggle } from "@/components/suggestions-toggle";
 import { DeletePlayer } from "@/app/players/delete-player";
 import { createCollider, confine, poolHeight, stepPool, POOL_BLOCK, type PoolBody } from "@/lib/pool-physics";
 import { agentRoleColor, CARD_SQUARE, rankStyle } from "@/lib/rank-style";
+import { useSuggestionsEnabled } from "@/lib/suggestions";
 import type { AgentView, ProfileView, RankView } from "@/lib/types";
+
+/** Which card wears the "Drag me!" bubble. */
+const HINT_INDEX = 0;
+/** Tile edge in px: desktop, and the cap on phones (where two must fit across). */
+const TILE_SIZE = 123;
+const TILE_SIZE_NARROW = 92;
+/** Closer than this to the arena's top edge, the bubble flips below the card so it isn't clipped. */
+const HINT_ROOM = 48;
 
 type Drag = { index: number; pointer: number; startX: number; startY: number; offsetX: number; offsetY: number; lastX: number; lastY: number; time: number; moved: boolean };
 
@@ -18,22 +28,32 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
   isAdmin: boolean;
 }) {
   const [selected, setSelected] = useState<ProfileView | null>(null);
-  const [expanded, setExpanded] = useState(false);
   const [paused, setPaused] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [touchDrag, setTouchDrag] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  // Only the first block is in the arena until it's expanded: the rest aren't drifting
+  // off-screen, they simply aren't rendered.
   const visible = useMemo(() => expanded ? profiles : profiles.slice(0, POOL_BLOCK), [profiles, expanded]);
+  const canExpand = profiles.length > POOL_BLOCK;
+  const [coarsePointer, setCoarsePointer] = useState(false);
+  /** Once someone has dragged a card, the hint has done its job for this visit. */
+  const [dragged, setDragged] = useState(false);
+  const suggestions = useSuggestionsEnabled();
+  // On phones a drag only works with touch-drag switched on; otherwise it would mislead.
+  const showHint = suggestions === true && !dragged && profiles.length > 0 && (!coarsePointer || touchDrag);
   const dialog = useRef<HTMLDialogElement>(null);
   const arena = useRef<HTMLUListElement>(null);
   const slots = useRef<(HTMLLIElement | null)[]>([]);
   const bodies = useRef<PoolBody[]>([]);
-  const bounds = useRef({ width: 0, height: 520, size: 176 });
+  const bounds = useRef({ width: 0, height: 520, size: TILE_SIZE });
   const drag = useRef<Drag | null>(null);
   const hovered = useRef<number | null>(null);
   const focused = useRef<number | null>(null);
   const suppressClick = useRef(false);
+  /** Opened by mouse or touch (not keyboard): on close, focus shouldn't linger on the tile. */
+  const openedByPointer = useRef(false);
   const stopped = useRef(false);
-  const canExpand = profiles.length > POOL_BLOCK;
 
   useEffect(() => {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -41,6 +61,14 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
     update();
     motion.addEventListener("change", update);
     return () => motion.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    const coarse = window.matchMedia("(pointer: coarse)");
+    const update = () => setCoarsePointer(coarse.matches);
+    update();
+    coarse.addEventListener("change", update);
+    return () => coarse.removeEventListener("change", update);
   }, []);
 
   useEffect(() => {
@@ -56,7 +84,7 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
     const layout = () => {
       const width = element.clientWidth;
       if (!width) return;
-      const size = width < 500 ? Math.min(132, Math.floor((width - 32) / 2)) : 176;
+      const size = width < 500 ? Math.min(TILE_SIZE_NARROW, Math.floor((width - 32) / 2)) : TILE_SIZE;
       const columns = Math.max(1, Math.floor(width / (size + 16)));
       const rows = Math.ceil(visible.length / columns);
       const height = Math.max(poolHeight(visible.length, width, size), rows * (size + 16) + 16);
@@ -89,7 +117,12 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
         const held = new Set<number>();
         if (drag.current) held.add(drag.current.index);
         if (!drag.current && hovered.current !== null) held.add(hovered.current);
-        if (!drag.current && focused.current !== null) held.add(focused.current);
+        // Keyboard focus only. A click focuses the tile too, and closing the player card
+        // hands focus back to it, which would otherwise pin the tile until you clicked away.
+        if (!drag.current && focused.current !== null
+            && slots.current[focused.current]?.querySelector(".pool-tile")?.matches(":focus-visible")) {
+          held.add(focused.current);
+        }
         const steps = Math.max(1, Math.ceil(dt / (1 / 240)));
         for (let i = 0; i < steps; i++) {
           stepPool(bodies.current, width, height, size, stopped.current ? 0 : dt / steps, held, stopped.current ? 0 : 12);
@@ -98,6 +131,7 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
       bodies.current.forEach((body, i) => {
         const slot = slots.current[i];
         if (slot) slot.style.transform = `translate3d(${body.x}px, ${body.y}px, 0)`;
+        if (slot && i === HINT_INDEX) slot.dataset.hintBelow = String(body.y < HINT_ROOM);
       });
       frame = requestAnimationFrame(tick);
     };
@@ -106,6 +140,8 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
   }, [visible]);
 
   useEffect(() => {
+    // The card covers the tile, so the pointer never "leaves" it; don't keep it held.
+    if (selected) hovered.current = null;
     if (selected) dialog.current?.showModal();
     else dialog.current?.close();
   }, [selected]);
@@ -148,6 +184,7 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
     const body = bodies.current[active.index];
     if (cancelled || stopped.current || event.timeStamp - active.time > 100) { body.vx = 0; body.vy = 0; }
     suppressClick.current = active.moved || cancelled;
+    if (active.moved) setDragged(true);
     if (active.moved) { event.currentTarget.blur(); hovered.current = null; focused.current = null; }
     drag.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
@@ -156,16 +193,6 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
   return (
     <section className="virtual-pool" aria-label="Explore the player arena">
       <div className="pool-toolbar">
-        <div>
-          <h2 className="text-xl uppercase">Player arena</h2>
-          <p id="pool-instructions" className="mt-1 max-w-xl text-sm leading-relaxed text-muted">
-            Select a player to view their profile. Drag to move cards.
-          </p>
-          <p className="mt-2 text-sm text-bone" role="status">
-            {canExpand && !expanded ? ` Expand to reveal ${profiles.length - POOL_BLOCK} more.` : ""}
-            {reducedMotion ? " Auto-motion is off for your reduced-motion preference." : ""}
-          </p>
-        </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={buttonClass()} disabled={reducedMotion}
             aria-pressed={paused || reducedMotion} onClick={() => setPaused(!paused)}>
@@ -176,9 +203,13 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
           </button>
           {canExpand ? <button type="button" className={buttonClass("primary")} aria-expanded={expanded}
             aria-controls="player-arena" onClick={() => setExpanded(!expanded)}>
-            {expanded ? "Collapse to 10 players" : `Expand arena · ${profiles.length} players`}
+            {expanded ? "Collapse to 10 players" : `Expand arena to ${profiles.length} players`}
           </button> : null}
         </div>
+        <p className="text-sm text-bone empty:hidden" role="status">
+          {canExpand && !expanded ? `Expand to reveal ${profiles.length - POOL_BLOCK} more.` : ""}
+          {reducedMotion ? " Auto-motion is off for your reduced-motion preference." : ""}
+        </p>
       </div>
       <ul ref={arena} id="player-arena" className="pool-arena" aria-describedby="pool-instructions" data-touch-drag={touchDrag}>
         {visible.map((p, index) => {
@@ -194,26 +225,36 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
                 onPointerEnter={(event) => { if (event.pointerType === "mouse" && !drag.current) hovered.current = index; }}
                 onPointerLeave={() => { if (hovered.current === index) hovered.current = null; }}
                 onFocus={() => { focused.current = index; }} onBlur={() => { focused.current = null; }}
-                onClick={(event) => { if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; return; } setSelected(p); }}>
+                onClick={(event) => { if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; return; } openedByPointer.current = event.detail !== 0; setSelected(p); }}>
                 <RankPortrait rank={p.currentRank} agent={agent} art={p.playerCard?.largeArt} name={p.mainAgent || p.username} />
                 <span className="pool-tile-identity">
                   <strong>{p.username}</strong>
                 </span>
               </button>
+              {showHint && index === HINT_INDEX ? <span className="pool-hint" aria-hidden="true">Drag me!</span> : null}
             </li>
           );
         })}
       </ul>
       {canExpand && expanded ? <div className="p-4"><button type="button" className={buttonClass()}
         onClick={() => { setExpanded(false); arena.current?.closest("section")?.scrollIntoView({ block: "start" }); }}>Collapse to 10 players</button></div> : null}
+      <SuggestionsToggle />
       <dialog ref={dialog} className="pool-dialog" aria-label={selected ? `${selected.username}'s player card` : "Player card"}
-        onCancel={() => setSelected(null)} onClose={() => setSelected(null)}
+        onCancel={() => setSelected(null)}
+        onClose={() => {
+          setSelected(null);
+          // The dialog hands focus back to the tile that opened it. Keyboard users need
+          // that; for a click it would just leave a focus ring on a tile that stays put.
+          const active = document.activeElement;
+          if (openedByPointer.current && active instanceof HTMLElement && active.classList.contains("pool-tile")) active.blur();
+        }}
         onClick={(event) => { if (event.target === event.currentTarget) setSelected(null); }}>
         {selected ? <div className="pool-dialog-content">
           <button type="button" autoFocus className="pool-dialog-close" onClick={() => setSelected(null)} aria-label="Close player card">✕</button>
           <PlayerCard username={selected.username} riotId={selected.riotId} playerCard={selected.playerCard}
-            mainAgent={selected.mainAgent} currentRank={selected.currentRank} agents={agents} ranks={ranks}
-            primaryRole={selected.primaryRole} secondaryRole={selected.secondaryRole} agentPool={selected.agents} bio={selected.bio} />
+            mainAgent={selected.mainAgent} currentRank={selected.currentRank} peakRank={selected.peakRank} agents={agents} ranks={ranks}
+            primaryRole={selected.primaryRole} secondaryRole={selected.secondaryRole} agentPool={selected.agents} bio={selected.bio}
+            layout="split" />
           {isAdmin ? <div className="border-t border-line bg-ink p-3"><DeletePlayer profileId={selected.id} username={selected.username} /></div> : null}
         </div> : null}
       </dialog>

@@ -24,7 +24,8 @@ public final class PlayerProfileDtos {
             String bio,
             Set<String> agents,
             String mainAgent,
-            PlayerCardView playerCard
+            PlayerCardView playerCard,
+            String peakRank
     ) {
         public static ProfileView of(PlayerProfile p) {
             return new ProfileView(
@@ -39,7 +40,8 @@ public final class PlayerProfileDtos {
                     p.getBio(),
                     new LinkedHashSet<>(p.getAgents()),
                     p.getMainAgent(),
-                    p.getPlayerCard() == null ? null : PlayerCardView.of(p.getPlayerCard()));
+                    p.getPlayerCard() == null ? null : PlayerCardView.of(p.getPlayerCard()),
+                    p.getPeakRank());
         }
     }
 
@@ -51,7 +53,8 @@ public final class PlayerProfileDtos {
             @Size(max = 1000) String bio,
             Set<String> agents,
             @Size(max = 64) String mainAgent,
-            @Positive Long playerCardId
+            @Positive Long playerCardId,
+            @Size(max = 32) String peakRank
     ) {
     }
 }
