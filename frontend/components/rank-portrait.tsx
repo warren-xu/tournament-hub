@@ -10,20 +10,25 @@ import type { AgentView } from "@/lib/types";
  * Rank-bordered portrait: a square preview in the arena, or the full player-card shape
  * (268×640, like Riot's large card art) on a profile.
  */
-export function RankPortrait({ rank, agent, art, name, shape = "square" }: {
+export function RankPortrait({ rank, agent, art, avatarUrl, name, shape = "square" }: {
   rank: string | null;
   agent?: AgentView;
+  /** The player's Valorant card art, behind the agent. */
   art?: string | null;
+  /** Their Discord avatar, used behind the agent when they haven't picked card art. */
+  avatarUrl?: string | null;
   name: string;
   shape?: "square" | "card";
 }) {
   const style = rankStyle(rank);
+  // Discord serves avatars at 128px by default; ask for enough to fill a whole card.
+  const backdrop = art ?? (avatarUrl ? `${avatarUrl}${avatarUrl.includes("?") ? "&" : "?"}size=512` : null);
   return (
     <span className="rank-portrait" aria-hidden="true" data-shape={shape} data-agent={agent?.name.toLowerCase()}
       style={{ "--rank-color": style.color } as CSSProperties}>
       <span className="rank-portrait-inner">
         <span className="rank-portrait-fallback">{name.slice(0, 2).toUpperCase()}</span>
-        {art ? <PortraitImage key={art} src={art} className="rank-portrait-art" /> : null}
+        {backdrop ? <PortraitImage key={backdrop} src={backdrop} className="rank-portrait-art" /> : null}
         {agent?.portraitUrl ? <AgentPortrait key={agent.portraitUrl} src={agent.portraitUrl} fallback={agent.iconUrl} />
           : agent?.iconUrl ? <PortraitImage key={agent.iconUrl} src={agent.iconUrl} className="rank-portrait-agent" /> : null}
       </span>

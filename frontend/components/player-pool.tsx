@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
-import { PlayerCard } from "@/components/player-card";
+import { PlayerDialog } from "@/components/player-dialog";
 import { RankPortrait } from "@/components/rank-portrait";
 import { buttonClass } from "@/components/ui";
 import { SuggestionsToggle } from "@/components/suggestions-toggle";
@@ -42,7 +42,6 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
   const suggestions = useSuggestionsEnabled();
   // On phones a drag only works with touch-drag switched on; otherwise it would mislead.
   const showHint = suggestions === true && !dragged && profiles.length > 0 && (!coarsePointer || touchDrag);
-  const dialog = useRef<HTMLDialogElement>(null);
   const arena = useRef<HTMLUListElement>(null);
   const slots = useRef<(HTMLLIElement | null)[]>([]);
   const bodies = useRef<PoolBody[]>([]);
@@ -142,8 +141,6 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
   useEffect(() => {
     // The card covers the tile, so the pointer never "leaves" it; don't keep it held.
     if (selected) hovered.current = null;
-    if (selected) dialog.current?.showModal();
-    else dialog.current?.close();
   }, [selected]);
 
   function startDrag(event: PointerEvent<HTMLButtonElement>, index: number) {
@@ -226,7 +223,7 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
                 onPointerLeave={() => { if (hovered.current === index) hovered.current = null; }}
                 onFocus={() => { focused.current = index; }} onBlur={() => { focused.current = null; }}
                 onClick={(event) => { if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; return; } openedByPointer.current = event.detail !== 0; setSelected(p); }}>
-                <RankPortrait rank={p.currentRank} agent={agent} art={p.playerCard?.largeArt} name={p.mainAgent || p.username} />
+                <RankPortrait rank={p.currentRank} agent={agent} art={p.playerCard?.largeArt} avatarUrl={p.avatarUrl} name={p.mainAgent || p.username} />
                 <span className="pool-tile-identity">
                   <strong>{p.username}</strong>
                 </span>
@@ -239,8 +236,7 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
       {canExpand && expanded ? <div className="p-4"><button type="button" className={buttonClass()}
         onClick={() => { setExpanded(false); arena.current?.closest("section")?.scrollIntoView({ block: "start" }); }}>Collapse to 10 players</button></div> : null}
       <SuggestionsToggle />
-      <dialog ref={dialog} className="pool-dialog" aria-label={selected ? `${selected.username}'s player card` : "Player card"}
-        onCancel={() => setSelected(null)}
+      <PlayerDialog profile={selected} agents={agents} ranks={ranks}
         onClose={() => {
           setSelected(null);
           // The dialog hands focus back to the tile that opened it. Keyboard users need
@@ -248,16 +244,7 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
           const active = document.activeElement;
           if (openedByPointer.current && active instanceof HTMLElement && active.classList.contains("pool-tile")) active.blur();
         }}
-        onClick={(event) => { if (event.target === event.currentTarget) setSelected(null); }}>
-        {selected ? <div className="pool-dialog-content">
-          <button type="button" autoFocus className="pool-dialog-close" onClick={() => setSelected(null)} aria-label="Close player card">✕</button>
-          <PlayerCard username={selected.username} riotId={selected.riotId} playerCard={selected.playerCard}
-            mainAgent={selected.mainAgent} currentRank={selected.currentRank} peakRank={selected.peakRank} agents={agents} ranks={ranks}
-            primaryRole={selected.primaryRole} secondaryRole={selected.secondaryRole} agentPool={selected.agents} bio={selected.bio}
-            layout="split" />
-          {isAdmin ? <div className="border-t border-line bg-ink p-3"><DeletePlayer profileId={selected.id} username={selected.username} /></div> : null}
-        </div> : null}
-      </dialog>
+        footer={isAdmin && selected ? <DeletePlayer profileId={selected.id} username={selected.username} /> : null} />
     </section>
   );
 }

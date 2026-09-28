@@ -136,6 +136,10 @@ export function useAuction(auctionId: number, initial: AuctionSnapshot) {
 
     if (message.type === "BID_LOCKED") setRejection(null);
 
+    // Whose turn it is and their pick change on these, and neither rides in the message
+    // itself: fetch the room's state rather than guess.
+    if (message.type === "STATUS_CHANGED" || message.type === "LOT_CLOSED") void resync();
+
     if (message.type === "LOT_OPENED") {
       // A fresh sealed round: nothing of the last one carries over.
       setReveal(null);
@@ -164,7 +168,7 @@ export function useAuction(auctionId: number, initial: AuctionSnapshot) {
         },
       ]);
     }
-  }, []);
+  }, [resync]);
 
   useEffect(() => {
     const client = new Client({

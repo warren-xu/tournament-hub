@@ -77,6 +77,10 @@ export interface ProfileView {
   playerCard: PlayerCardView | null;
   /** Highest rank reached; shown beside the current one. */
   peakRank: string | null;
+  /** Discord profile banner (Nitro only), behind the stats on the full card. */
+  bannerUrl: string | null;
+  /** Discord accent colour as 0xRRGGBB: the stats background when there's no banner. */
+  accentColor: number | null;
 }
 
 /** Suggested profile values from a Riot ID's recent games */
@@ -196,6 +200,10 @@ export interface AuctionSnapshot {
   /** The viewer's own sealed bid on the open lot. Nobody else's is sent. */
   yourBid: number | null;
   pendingLots: number;
+  /** The team whose captain nominates next; null outside a running draft. */
+  turnTeamId: number | null;
+  /** That captain's pick, waiting for the admin to open bidding; null until they choose. */
+  pickedPlayer: PlayerSummary | null;
   serverTime: string;
 }
 

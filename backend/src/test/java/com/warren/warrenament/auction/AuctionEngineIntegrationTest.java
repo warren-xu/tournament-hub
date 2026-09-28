@@ -263,6 +263,52 @@ class AuctionEngineIntegrationTest {
     }
 
     @Test
+    @DisplayName("captains take turns nominating, and the admin opens bidding on their pick")
+    void captainsTakeTurnsNominating() {
+        // Two teams of two: four open slots, four players.
+        Tournament tournament = fixtures.tournament(100, 2, 1);
+        Auction auction = fixtures.liveAuction(tournament, 30);
+        auction.setStatus(AuctionStatus.SETUP);
+        auctions.saveAndFlush(auction);
+        User capA = fixtures.user("turnCapA");
+        User capB = fixtures.user("turnCapB");
+        Team a = fixtures.team(tournament, "A", capA);
+        Team b = fixtures.team(tournament, "B", capB);
+        List<PlayerProfile> pool = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            PlayerProfile player = fixtures.profile("turnPlayer" + i);
+            pool.add(player);
+            fixtures.queuedLot(auction, player);
+        }
+
+        // The first team created nominates first.
+        assertThat(auctionService.start(auction.getId()).turnTeamId()).isEqualTo(a.getId());
+
+        // Only that captain may pick, and only players still in the pool.
+        assertThatThrownBy(() -> auctionService.pickNomination(auction.getId(), capB.getId(), pool.get(0).getId()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("A's turn");
+
+        // A captain may change their mind until bidding opens.
+        auctionService.pickNomination(auction.getId(), capA.getId(), pool.get(1).getId());
+        AuctionDtos.AuctionSnapshot picked =
+                auctionService.pickNomination(auction.getId(), capA.getId(), pool.get(3).getId());
+        assertThat(picked.pickedPlayer().profileId()).isEqualTo(pool.get(3).getId());
+
+        // The admin's "next" opens that pick, not the head of the queue.
+        AuctionDtos.AuctionSnapshot opened = auctionService.nominateNext(auction.getId());
+        assertThat(opened.currentLot().player().profileId()).isEqualTo(pool.get(3).getId());
+        assertThat(opened.pickedPlayer()).isNull();
+
+        // Once that player is settled, the other team is up; then it comes back round.
+        auctionService.closeLot(opened.currentLot().lotId());
+        assertThat(auctions.findById(auction.getId()).orElseThrow().getTurnTeamId()).isEqualTo(b.getId());
+        AuctionDtos.AuctionSnapshot second = auctionService.nominateNext(auction.getId());
+        auctionService.closeLot(second.currentLot().lotId());
+        assertThat(auctions.findById(auction.getId()).orElseThrow().getTurnTeamId()).isEqualTo(a.getId());
+    }
+
+    @Test
     @DisplayName("the pool has to match the open slots before the auction can start")
     void startRejectsAPoolThatDoesNotFillEverySlot() {
         // Rosters of 3 whose captains already hold a slot: two teams need exactly 4 players.
@@ -284,8 +330,9 @@ class AuctionEngineIntegrationTest {
 
         fixtures.queuedLot(auction, fixtures.profile("queued3"));
         assertThat(auctionService.start(auction.getId()).status()).isEqualTo(AuctionStatus.LIVE);
+        assertThat(tournaments.findById(tournament.getId()).orElseThrow().getStatus())
+                .isEqualTo(TournamentStatus.DRAFTING);
 
-        // One too many is refused just as clearly.
         auction.setStatus(AuctionStatus.SETUP);
         fixtures.queuedLot(auction, fixtures.profile("queued4"));
         assertThatThrownBy(() -> auctionService.start(auction.getId()))

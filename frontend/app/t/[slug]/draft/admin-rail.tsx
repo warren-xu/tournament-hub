@@ -21,6 +21,7 @@ export function AdminRail({
 
   const auctionId = snapshot.auctionId;
   const lotOpen = snapshot.currentLot !== null;
+  const turnTeam = snapshot.teams.find((t) => t.teamId === snapshot.turnTeamId);
 
   // The random fill runs by itself as soon as the last credit is spent. The button is
   // here for the case an undo puts credits back and the draw has to be re-run.
@@ -70,6 +71,8 @@ export function AdminRail({
             : snapshot.status === "SETUP" ? "Start the draft, then nominate a player."
             : snapshot.status === "PAUSED" ? "Paused. Resume to continue."
             : lotOpen ? "Round open. Results reveal automatically, or close it early."
+            : snapshot.pickedPlayer ? `${turnTeam?.name ?? "The captain"} nominated ${snapshot.pickedPlayer.username}. Open bidding when you're ready.`
+            : turnTeam ? `Waiting for ${turnTeam.name} to pick. You can nominate someone yourself if they're away.`
             : "Nominate the next player."}
         </p>
         <div className="flex flex-wrap gap-2">
@@ -153,7 +156,9 @@ export function AdminRail({
               ? "Nominating…"
               : lotOpen
                 ? "Round in progress"
-                : "Nominate next in queue"}
+                : snapshot.pickedPlayer
+                  ? `Open bidding on ${snapshot.pickedPlayer.username}`
+                  : "Nominate next in queue (no pick yet)"}
           </button>
         </div>
 

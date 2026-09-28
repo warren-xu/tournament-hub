@@ -25,7 +25,9 @@ public final class PlayerProfileDtos {
             Set<String> agents,
             String mainAgent,
             PlayerCardView playerCard,
-            String peakRank
+            String peakRank,
+            String bannerUrl,
+            Integer accentColor
     ) {
         public static ProfileView of(PlayerProfile p) {
             return new ProfileView(
@@ -41,7 +43,9 @@ public final class PlayerProfileDtos {
                     new LinkedHashSet<>(p.getAgents()),
                     p.getMainAgent(),
                     p.getPlayerCard() == null ? null : PlayerCardView.of(p.getPlayerCard()),
-                    p.getPeakRank());
+                    p.getPeakRank(),
+                    p.getUser().getBannerUrl(),
+                    p.getUser().getAccentColor());
         }
     }
 

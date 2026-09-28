@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState, type RefObject } from "react";
+import Image from "next/image";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { AdminRail } from "./admin-rail";
+import { DraftAdvice } from "./draft-advice";
+import { PlayerName, ProfileOpener } from "./player-name";
+import { PlayerDialog } from "@/components/player-dialog";
 import { Avatar, RankBadge, rankIndex, Tag } from "@/components/ui";
 import {
   useAuction,
@@ -10,10 +14,14 @@ import {
   type Reveal,
 } from "@/lib/use-auction";
 import { timeOfDay } from "@/lib/format";
+import { playLockIn, playRoundStart, playTick, playTimeUp, playTurnChime, setSoundsEnabled, unlockAudio, useSoundsEnabled } from "@/lib/sounds";
+import type { RoleInfo } from "@/lib/valorant-roles";
 import type {
+  AgentView,
   AuctionSnapshot,
   AuctionTeamView,
   Me,
+  ProfileView,
   RankView,
 } from "@/lib/types";
 
@@ -21,12 +29,18 @@ export function AuctionRoom({
   initial,
   me,
   ranks,
+  profiles,
+  agents,
+  roles,
   rosterSize,
   creditBudget,
 }: {
   initial: AuctionSnapshot;
   me: Me | null;
   ranks: RankView[];
+  profiles: ProfileView[];
+  agents: AgentView[];
+  roles: Record<string, RoleInfo>;
   rosterSize: number;
   creditBudget: number;
 }) {
@@ -45,14 +59,95 @@ export function AuctionRoom({
   } = useAuction(initial.auctionId, initial);
 
   const rankLookup = rankIndex(ranks);
+  const profileLookup = useMemo(() => new Map(profiles.map((p) => [p.id, p])), [profiles]);
+  const [openProfileId, setOpenProfileId] = useState<number | null>(null);
+
+  const opener = useMemo(() => ({
+    open: setOpenProfileId,
+    has: (id: number) => profileLookup.has(id),
+  }), [profileLookup]);
   const lot = snapshot.currentLot;
   const myTeam = me
     ? snapshot.teams.find((t) => t.captainUserId === me.userId)
     : undefined;
+  // A captain's nominating turn: between rounds, while the draft runs.
+  const myTurn = myTeam !== undefined && snapshot.status === "LIVE" && !lot
+    && snapshot.turnTeamId === myTeam.teamId;
+  const soundOn = useSoundsEnabled();
+  // Bidding opening: a new round starting while you're here, not one already running at load.
+  const openLotId = lot?.status === "OPEN" ? lot.lotId : null;
+  const lastOpenLot = useRef(openLotId);
+  useEffect(() => {
+    if (openLotId !== null && openLotId !== lastOpenLot.current && soundOn) playRoundStart();
+    lastOpenLot.current = openLotId;
+  }, [openLotId, soundOn]);
+
+  // Browsers only allow audio after an interaction; the first one anywhere on the page
+  // unlocks it for the whole visit, so the countdown and your-turn cues can play later.
+  useEffect(() => {
+    const unlock = () => {
+      unlockAudio();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+  const [turnToast, setTurnToast] = useState(false);
+  const wasMyTurn = useRef(myTurn);
+  useEffect(() => {
+    // Only a turn that starts while you're here: not one already running when the page loads.
+    if (myTurn && !wasMyTurn.current) {
+      if (soundOn) playTurnChime();
+      setTurnToast(true);
+    }
+    wasMyTurn.current = myTurn;
+  }, [myTurn, soundOn]);
+  useEffect(() => {
+    if (!turnToast) return;
+    const timer = setTimeout(() => setTurnToast(false), 6000);
+    return () => clearTimeout(timer);
+  }, [turnToast]);
+  // Visible from another tab: the title carries the cue while it's your turn. Next.js
+  // rewrites the title as the page settles, so the prefix is re-applied whenever it does.
+  useEffect(() => {
+    if (!myTurn) return;
+    const prefix = "● Your turn · ";
+    const apply = () => {
+      if (!document.title.startsWith(prefix)) document.title = prefix + document.title;
+    };
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => {
+      observer.disconnect();
+      if (document.title.startsWith(prefix)) document.title = document.title.slice(prefix.length);
+    };
+  }, [myTurn]);
 
   return (
+    <ProfileOpener.Provider value={opener}>
+    <PlayerDialog profile={openProfileId === null ? null : profileLookup.get(openProfileId) ?? null}
+      agents={agents} ranks={ranks} onClose={() => setOpenProfileId(null)} />
+    {/* Gone after six seconds, when dismissed, or as soon as the turn moves on. */}
+    {turnToast && myTurn ? (
+      <div role="alert" className="turn-toast">
+        <span className="turn-dot" aria-hidden />
+        <span>
+          <span className="block font-display text-lg uppercase tracking-wide">Your turn</span>
+          <span className="block text-xs text-bone/80">Nominate a player from Best available.</span>
+        </span>
+        <button type="button" className="turn-toast-close" aria-label="Dismiss" onClick={() => setTurnToast(false)}>✕</button>
+      </div>
+    ) : null}
     <div className="auction-room space-y-5">
       <StatusBar
+        soundOn={soundOn}
+        onToggleSound={() => setSoundsEnabled(!soundOn)}
         connection={connection}
         snapshot={snapshot}
         pending={snapshot.pendingLots}
@@ -68,12 +163,20 @@ export function AuctionRoom({
               onDone={consumeAssignment}
             />
           ) : null}
+          <NominationStatus snapshot={snapshot} myTeamId={myTeam?.teamId} />
+          {/* On your turn the list you nominate from comes straight under the banner. */}
+          {myTeam && myTurn ? (
+            <DraftAdvice snapshot={snapshot} team={myTeam} profiles={profileLookup} ranks={rankLookup} roles={roles}
+              onSnapshot={applySnapshot} />
+          ) : null}
           <LotCard
             snapshot={snapshot}
             reveal={reveal}
             offsetRef={clockOffset}
             myTeamId={myTeam?.teamId}
             ranks={rankLookup}
+            profiles={profileLookup}
+            agents={agents}
           />
           {myTeam ? <BidControls
             key={lot?.lotId ?? "idle"}
@@ -82,10 +185,17 @@ export function AuctionRoom({
             myTeam={myTeam}
             yourBid={yourBid}
             rejection={rejection?.message ?? null}
-            onBid={submitBid}
+            onBid={(lotId, amount) => {
+              if (soundOn) playLockIn();
+              submitBid(lotId, amount);
+            }}
             offsetRef={clockOffset}
             connection={connection}
           /> : <p className="border-l-2 border-line bg-panel px-5 py-4 text-sm text-muted">Spectator view · Follow each pick and bid reveal live. No sign-in needed.</p>}
+          {myTeam && !myTurn ? (
+            <DraftAdvice snapshot={snapshot} team={myTeam} profiles={profileLookup} ranks={rankLookup} roles={roles}
+              onSnapshot={applySnapshot} />
+          ) : null}
           <details className="border border-line-soft bg-panel">
             <summary className="px-5 py-3 font-display text-base uppercase tracking-wide">Draft activity</summary>
             <Feed entries={feed} />
@@ -95,6 +205,7 @@ export function AuctionRoom({
         <div className="space-y-5">
           <TeamsRail
             teams={snapshot.teams}
+            nominatingTeamId={!lot && (snapshot.status === "LIVE" || snapshot.status === "PAUSED") ? snapshot.turnTeamId : null}
             myTeamId={myTeam?.teamId}
             lockedInTeamIds={lot?.lockedInTeamIds ?? []}
             creditBudget={creditBudget}
@@ -104,6 +215,50 @@ export function AuctionRoom({
             <AdminRail snapshot={snapshot} onSnapshot={applySnapshot} />
           ) : null}
         </div>
+      </div>
+    </div>
+    </ProfileOpener.Provider>
+  );
+}
+
+/**
+ * Whose turn it is to nominate, and what they picked. Shown between rounds; once bidding
+ * opens, the lot itself takes over.
+ */
+function NominationStatus({ snapshot, myTeamId }: {
+  snapshot: AuctionSnapshot;
+  myTeamId?: number;
+}) {
+  if (snapshot.currentLot || snapshot.turnTeamId === null
+      || (snapshot.status !== "LIVE" && snapshot.status !== "PAUSED")) return null;
+  const team = snapshot.teams.find((t) => t.teamId === snapshot.turnTeamId);
+  if (!team) return null;
+  const mine = team.teamId === myTeamId;
+  const pick = snapshot.pickedPlayer;
+
+  const choosing = !pick;
+
+  return (
+    // data-active runs the sweeping bar while someone is still choosing.
+    <div role="status" className="turn-banner" data-mine={mine || undefined} data-active={choosing || undefined}>
+      <span className="turn-dot" aria-hidden data-still={!choosing || undefined} />
+      <div className="min-w-0 flex-1">
+        {pick ? (
+          <p className="text-sm text-muted">
+            <span className="text-bone">{mine ? "You" : team.name}</span> nominated{" "}
+            <PlayerName profileId={pick.profileId}><span className="text-bone">{pick.username}</span></PlayerName>.
+            {" "}Waiting for the admin to open bidding{mine ? ". You can still change your pick below" : ""}.
+          </p>
+        ) : mine ? (
+          <>
+            <p className="font-display text-2xl uppercase leading-none tracking-wide text-bone">Your turn to nominate</p>
+            <p className="mt-1.5 text-sm text-muted">Pick a player from <span className="text-bone">Best available</span>, just below.</p>
+          </>
+        ) : (
+          <p className="text-sm text-muted">
+            <span className="font-display text-base uppercase tracking-wide text-bone">{team.name}</span> is choosing who to nominate.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -126,10 +281,14 @@ const CONNECTION_COPY: Record<ConnectionState, string> = {
 };
 
 function StatusBar({
+  soundOn,
+  onToggleSound,
   connection,
   snapshot,
   pending,
 }: {
+  soundOn: boolean;
+  onToggleSound: () => void;
   connection: ConnectionState;
   snapshot: AuctionSnapshot;
   pending: number;
@@ -151,7 +310,11 @@ function StatusBar({
         <span className="text-bone">{pending}</span> in queue
       </span>
 
-      <div className="ml-auto flex items-center gap-2">
+      <button type="button" className="turn-sound ml-auto" aria-pressed={soundOn} onClick={onToggleSound}>
+        Sounds: {soundOn ? "on" : "off"}
+      </button>
+
+      <div className="flex items-center gap-2">
         <span
           aria-hidden
           className={`block size-1.5 ${
@@ -179,12 +342,16 @@ function LotCard({
   offsetRef,
   myTeamId,
   ranks,
+  profiles,
+  agents,
 }: {
   snapshot: AuctionSnapshot;
   reveal: Reveal | null;
   offsetRef: RefObject<number>;
   myTeamId?: number;
   ranks: Map<string, RankView>;
+  profiles: Map<number, ProfileView>;
+  agents: AgentView[];
 }) {
   const lot = snapshot.currentLot;
 
@@ -214,7 +381,7 @@ function LotCard({
           <div>
             <p className="eyebrow">Lot {lot.seq}</p>
             <h2 className="mt-1 text-4xl uppercase leading-none tracking-tight sm:text-5xl">
-              {lot.player.username}
+              <PlayerName profileId={lot.player.profileId}>{lot.player.username}</PlayerName>
             </h2>
             <p className="mt-2 font-mono text-sm text-dim">
               {lot.player.riotId ?? "—"}
@@ -240,6 +407,8 @@ function LotCard({
         />
       </div>
 
+      <NomineeDetails profile={profiles.get(lot.player.profileId)} agents={agents} ranks={ranks} />
+
       <div className="mt-8 flex flex-wrap items-end justify-between gap-6 border-t border-line-soft pt-6">
         <div>
           <p className="eyebrow">Bids in</p>
@@ -262,6 +431,71 @@ function LotCard({
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * The rest of the nominee's profile: what a captain weighs before bidding. Rank and roles
+ * are already in the header; this adds peak, main agent, agent pool and their own notes.
+ */
+function NomineeDetails({
+  profile,
+  agents,
+  ranks,
+}: {
+  profile: ProfileView | undefined;
+  agents: AgentView[];
+  ranks: Map<string, RankView>;
+}) {
+  if (!profile) return null;
+  const main = agents.find((a) => a.name.toLowerCase() === profile.mainAgent?.toLowerCase());
+  const pool = profile.agents
+    .map((name) => ({ name, agent: agents.find((a) => a.name === name) }))
+    // The main agent is shown on its own, so it leads rather than repeats.
+    .sort((a, b) => Number(b.name === profile.mainAgent) - Number(a.name === profile.mainAgent));
+
+  return (
+    <dl className="mt-6 grid gap-x-8 gap-y-5 border-t border-line-soft pt-6 sm:grid-cols-3">
+      <div>
+        <dt className="eyebrow">Peak rank</dt>
+        <dd className="mt-1.5">
+          {profile.peakRank ? <RankBadge name={profile.peakRank} ranks={ranks} size={22} /> : <span className="text-sm text-dim">—</span>}
+        </dd>
+      </div>
+      <div>
+        <dt className="eyebrow">Main agent</dt>
+        <dd className="mt-1.5 flex items-center gap-2 text-sm text-bone">
+          {main?.iconUrl ? (
+            <Image src={main.iconUrl} alt="" width={24} height={24} unoptimized className="size-6 border border-line bg-ink" />
+          ) : null}
+          {profile.mainAgent ?? <span className="text-dim">—</span>}
+        </dd>
+      </div>
+      <div>
+        <dt className="eyebrow">Agent pool</dt>
+        <dd className="mt-1.5">
+          {pool.length === 0 ? <span className="text-sm text-dim">—</span> : (
+            <ul className="flex flex-wrap gap-1">
+              {pool.map(({ name, agent }) => (
+                <li key={name} title={name}>
+                  {agent?.iconUrl ? (
+                    <Image src={agent.iconUrl} alt={name} width={24} height={24} unoptimized className="size-6 border border-line bg-ink" />
+                  ) : (
+                    <span className="border border-line px-1.5 py-0.5 font-display text-[0.625rem] uppercase tracking-widest text-muted">{name}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </dd>
+      </div>
+      {profile.bio ? (
+        <div className="sm:col-span-3">
+          <dt className="eyebrow">Notes for captains</dt>
+          <dd className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-muted">{profile.bio}</dd>
+        </div>
+      ) : null}
+    </dl>
   );
 }
 
@@ -290,7 +524,7 @@ function RevealCard({
           <div>
             <p className="eyebrow">Lot {lot.seq} · result</p>
             <h2 className="mt-1 text-4xl uppercase leading-none tracking-tight">
-              {lot.player.username}
+              <PlayerName profileId={lot.player.profileId}>{lot.player.username}</PlayerName>
             </h2>
             <div className="mt-2">
               <RankBadge name={lot.player.currentRank} ranks={ranks} size={22} />
@@ -381,6 +615,19 @@ function Countdown({
     remaining: seeded,
     longest: Math.max(1, seeded),
   }));
+
+  // The last five seconds tick, and the end sounds; nothing plays for a round that was
+  // already that far gone when the page loaded, only as the seconds actually change.
+  const soundOn = useSoundsEnabled();
+  const lastSecond = useRef(Math.ceil(seeded));
+  const secondNow = Math.ceil(clock.remaining);
+  useEffect(() => {
+    const previous = lastSecond.current;
+    lastSecond.current = secondNow;
+    if (!soundOn || paused || !endsAt || secondNow === previous) return;
+    if (secondNow >= 1 && secondNow <= 5) playTick();
+    else if (secondNow === 0 && previous > 0) playTimeUp();
+  }, [secondNow, soundOn, paused, endsAt]);
 
   useEffect(() => {
     if (!target) return;
@@ -675,12 +922,15 @@ function RandomFillRoulette({
 
 function TeamsRail({
   teams,
+  nominatingTeamId,
   myTeamId,
   lockedInTeamIds,
   creditBudget,
   rosterSize,
 }: {
   teams: AuctionTeamView[];
+  /** The team whose captain is nominating right now, if anyone. */
+  nominatingTeamId: number | null;
   myTeamId?: number;
   lockedInTeamIds: number[];
   creditBudget: number;
@@ -714,6 +964,9 @@ function TeamsRail({
                   ) : null}
                   <span className="truncate">{team.name}</span>
                   {mine ? <Tag>You</Tag> : null}
+                  {team.teamId === nominatingTeamId ? (
+                    <span className="turn-tag"><span className="turn-dot" aria-hidden />Nominating</span>
+                  ) : null}
                 </p>
                 <p className="tabular shrink-0 font-display text-lg font-semibold">
                   {team.remainingCredits}
@@ -738,7 +991,7 @@ function TeamsRail({
                 <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
                   {team.roster.map((entry) => (
                     <li key={entry.profileId} className="tabular">
-                      {entry.username}
+                      <PlayerName profileId={entry.profileId}>{entry.username}</PlayerName>
                       <span className="text-dim"> {entry.pricePaid}</span>
                     </li>
                   ))}

@@ -32,7 +32,7 @@ export default async function ProfilePage() {
             Your player card
           </h1>
           <p className="mt-4 text-sm leading-relaxed text-muted">
-            Captains read this card while they decide what you are worth. Sign in
+            Captains read this card to get to know you. Sign in
             to fill it out.
           </p>
           <div className="mt-8">

@@ -40,6 +40,14 @@ public class Auction {
     @Column(name = "current_lot_id")
     private Long currentLotId;
 
+    /** The team whose captain nominates next; teams take turns in creation order. */
+    @Column(name = "turn_team_id")
+    private Long turnTeamId;
+
+    /** The lot that captain has picked, waiting for the admin to open bidding on it. */
+    @Column(name = "pick_lot_id")
+    private Long pickLotId;
+
     /** How long a nominated player stays open for sealed bids. */
     @Column(name = "lot_duration_seconds", nullable = false)
     private int lotDurationSeconds = 30;

@@ -4,6 +4,7 @@ import com.warren.warrenament.auction.AuctionDtos.BidView;
 import com.warren.warrenament.auction.AuctionDtos.AuctionSnapshot;
 import com.warren.warrenament.auction.AuctionDtos.LotView;
 import com.warren.warrenament.auction.AuctionDtos.PlayerSummary;
+import com.warren.warrenament.auction.AuctionDtos.PlayerSummary;
 import com.warren.warrenament.auction.AuctionDtos.RosterEntry;
 import com.warren.warrenament.auction.AuctionDtos.TeamView;
 import com.warren.warrenament.auth.UserRepository;
@@ -180,6 +181,9 @@ public class AuctionViewMapper {
                 recentBids,
                 yourBid(currentLot, tournament.getId(), viewerUserId),
                 pending,
+                auction.getTurnTeamId(),
+                auction.getPickLotId() == null ? null : lots.findById(auction.getPickLotId())
+                        .map(lot -> PlayerSummary.of(lot.getPlayerProfile())).orElse(null),
                 Instant.now());
     }
 

@@ -4,11 +4,14 @@ import { AuctionRoom } from "./auction-room";
 import { EmptyState, Eyebrow, LinkButton, OfflineNotice } from "@/components/ui";
 import {
   backendReachable,
+  getAgents,
   getAuctionByTournament,
   getMe,
+  getProfiles,
   getRanks,
   getTournamentBySlug,
 } from "@/lib/server-api";
+import { getRoleInfo } from "@/lib/valorant-roles";
 
 export default async function DraftPage(props: PageProps<"/t/[slug]/draft">) {
   const { slug } = await props.params;
@@ -24,10 +27,14 @@ export default async function DraftPage(props: PageProps<"/t/[slug]/draft">) {
   const tournament = await getTournamentBySlug(slug);
   if (!tournament) notFound();
 
-  const [me, auction, ranks] = await Promise.all([
+  const [me, auction, ranks, profiles, agents, roles] = await Promise.all([
     getMe(),
     getAuctionByTournament(tournament.id),
     getRanks(true),
+    // Full profiles fill in the nominee's card and let captains' advice see rosters' roles.
+    getProfiles(),
+    getAgents(true),
+    getRoleInfo(),
   ]);
 
   if (!auction) {
@@ -77,6 +84,9 @@ export default async function DraftPage(props: PageProps<"/t/[slug]/draft">) {
         initial={auction}
         me={me}
         ranks={ranks ?? []}
+        profiles={profiles ?? []}
+        agents={agents ?? []}
+        roles={roles}
         rosterSize={tournament.rosterSize}
         creditBudget={tournament.creditBudget}
       />

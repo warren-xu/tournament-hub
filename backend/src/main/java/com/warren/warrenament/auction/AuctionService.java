@@ -160,7 +160,12 @@ public class AuctionService {
         }
         requireSlotsMatchPool(auction, tournament, roster);
         auction.setStatus(AuctionStatus.LIVE);
+        if (auction.getTurnTeamId() == null) {
+            advanceTurn(auction);
+        }
         auctions.saveAndFlush(auction);
+        tournament.setStatus(TournamentStatus.DRAFTING);
+        tournaments.saveAndFlush(tournament);
         publishStatus(auction, "Draft started");
         return mapper.toSnapshot(auction);
     }
@@ -226,18 +231,80 @@ public class AuctionService {
         return open(auction, lot);
     }
 
-    /** Puts the next queued player up for bidding. */
+    /**
+     * Opens bidding on the nominating captain's pick. With no pick made, falls back to the
+     * next player in queue order, so an absent captain can't stall the draft.
+     */
     @Transactional
     public AuctionSnapshot nominateNext(Long auctionId) {
         Auction auction = require(auctionId);
         requireLive(auction);
         requireNoOpenLot(auction);
 
+        if (auction.getPickLotId() != null) {
+            Lot picked = lots.findById(auction.getPickLotId()).orElse(null);
+            if (picked != null) {
+                return open(auction, picked);
+            }
+        }
         Lot lot = lots.findFirstByAuctionIdAndStatusOrderBySeqAsc(auctionId, LotStatus.PENDING)
                 // Nobody bid on them the first time; they go back up rather than vanish.
                 .or(() -> lots.findFirstByAuctionIdAndStatusOrderBySeqAsc(auctionId, LotStatus.UNSOLD))
                 .orElseThrow(() -> new BadRequestException("No players left in the queue"));
         return open(auction, lot);
+    }
+
+    /**
+     * The nominating captain picks who goes up next. They may change their mind until the
+     * admin opens bidding; nothing is bid on until then.
+     */
+    @Transactional
+    public AuctionSnapshot pickNomination(Long auctionId, Long captainUserId, Long playerProfileId) {
+        Auction auction = require(auctionId);
+        requireLive(auction);
+        requireNoOpenLot(auction);
+
+        Team turn = auction.getTurnTeamId() == null ? null
+                : teams.findById(auction.getTurnTeamId()).orElse(null);
+        if (turn == null || !turn.getCaptainUserId().equals(captainUserId)) {
+            throw new BadRequestException(turn == null
+                    ? "Nobody is nominating right now"
+                    : "It's " + turn.getName() + "'s turn to nominate");
+        }
+        Lot lot = lots.findByAuctionIdAndPlayerProfileId(auctionId, playerProfileId)
+                .filter(l -> l.getStatus() == LotStatus.PENDING || l.getStatus() == LotStatus.UNSOLD)
+                .orElseThrow(() -> new BadRequestException("That player isn't available to nominate"));
+
+        auction.setPickLotId(lot.getId());
+        auctions.saveAndFlush(auction);
+        publishStatus(auction, "%s nominated %s".formatted(
+                turn.getName(), lot.getPlayerProfile().getUser().getUsername()));
+        return mapper.toSnapshot(auction, captainUserId);
+    }
+
+    /**
+     * Hands the nomination to the next team, in creation order (Team 1, 2 ... n, then round
+     * again), skipping teams whose roster is full. Clears any unused pick.
+     */
+    private void advanceTurn(Auction auction) {
+        Tournament tournament = auction.getTournament();
+        Map<Long, Integer> rosterCounts = mapper.rosterCounts(tournament.getId());
+        List<Team> withRoom = teams.findByTournamentId(tournament.getId()).stream()
+                .filter(t -> rosterCounts.getOrDefault(t.getId(), 0) < tournament.getRosterSize())
+                .sorted(java.util.Comparator.comparing(Team::getId))
+                .toList();
+
+        auction.setPickLotId(null);
+        if (withRoom.isEmpty()) {
+            auction.setTurnTeamId(null);
+            return;
+        }
+        Long current = auction.getTurnTeamId();
+        Team next = withRoom.stream()
+                .filter(t -> current == null || t.getId() > current)
+                .findFirst()
+                .orElse(withRoom.getFirst());
+        auction.setTurnTeamId(next.getId());
     }
 
     private AuctionSnapshot open(Auction auction, Lot lot) {
@@ -260,6 +327,8 @@ public class AuctionService {
         lots.saveAndFlush(lot);
 
         auction.setCurrentLotId(lot.getId());
+        // Whoever nominated, the pick is spent; the turn moves on once this lot closes.
+        auction.setPickLotId(null);
         auctions.saveAndFlush(auction);
 
         events.publishEvent(new AuctionEvents(auction.getId(), new AuctionMessage(
@@ -337,8 +406,10 @@ public class AuctionService {
 
         if (lotId.equals(auction.getCurrentLotId())) {
             auction.setCurrentLotId(null);
-            auctions.saveAndFlush(auction);
         }
+        // Sold or not, that nomination is done: the next team is up.
+        advanceTurn(auction);
+        auctions.saveAndFlush(auction);
 
         events.publishEvent(new AuctionEvents(auction.getId(), new AuctionMessage(
                 AuctionMessage.Type.LOT_CLOSED,
@@ -468,6 +539,8 @@ public class AuctionService {
     private void finish(Auction auction, int stranded) {
         auction.setStatus(AuctionStatus.COMPLETE);
         auction.setCurrentLotId(null);
+        auction.setTurnTeamId(null);
+        auction.setPickLotId(null);
         auctions.saveAndFlush(auction);
 
         // The draft is what DRAFTING meant; with the rosters settled the tournament is on.

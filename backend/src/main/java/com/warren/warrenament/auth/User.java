@@ -34,6 +34,14 @@ public class User {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
+    /** Discord profile banner; only Nitro users have one. */
+    @Column(name = "banner_url")
+    private String bannerUrl;
+
+    /** Discord's profile accent colour as 0xRRGGBB, the fallback when there is no banner. */
+    @Column(name = "accent_color")
+    private Integer accentColor;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role = Role.PLAYER;

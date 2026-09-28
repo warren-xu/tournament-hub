@@ -94,6 +94,10 @@ public final class AuctionDtos {
             /** The viewer's own sealed bid on the open lot, which is theirs to see. */
             Integer yourBid,
             int pendingLots,
+            /** The team whose captain nominates next, or null outside a running draft. */
+            Long turnTeamId,
+            /** That captain's pick, waiting for the admin to open bidding; null until they choose. */
+            PlayerSummary pickedPlayer,
             Instant serverTime
     ) {
     }

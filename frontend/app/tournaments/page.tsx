@@ -14,6 +14,13 @@ import {
 } from "@/lib/server-api";
 import type { TournamentStatus } from "@/lib/types";
 
+/** Only tournaments whose draft has started get a dot: yellow while it runs, green once done. */
+const DRAFT_DOT: Partial<Record<TournamentStatus, { label: string; color: string }>> = {
+  DRAFTING: { label: "Draft in progress", color: "bg-underway" },
+  LIVE: { label: "Draft complete", color: "bg-done" },
+  COMPLETE: { label: "Draft complete", color: "bg-done" },
+};
+
 const STATUS_COPY: Record<TournamentStatus, string> = {
   DRAFT: "Setting up",
   REGISTRATION: "Sign-ups open",
@@ -101,8 +108,12 @@ export default async function TournamentsPage() {
               >
                 <Link
                   href={`/t/${t.slug}`}
-                  className="group flex h-full flex-col items-start gap-5 rounded-sm border border-line bg-panel p-6 transition-colors hover:border-muted hover:bg-raise"
+                  className="group relative flex h-full flex-col items-start gap-5 rounded-sm border border-line bg-panel p-6 transition-colors hover:border-muted hover:bg-raise"
                 >
+                  {DRAFT_DOT[t.status] ? (
+                    <span className={`absolute top-4 right-4 size-2.5 rounded-full ${DRAFT_DOT[t.status]!.color}`}
+                      role="img" aria-label={DRAFT_DOT[t.status]!.label} title={DRAFT_DOT[t.status]!.label} />
+                  ) : null}
                   <span className="min-w-0">
                     <span className="block font-display text-xl uppercase tracking-wide transition-colors group-hover:text-signal">
                       {t.name}

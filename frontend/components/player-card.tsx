@@ -24,6 +24,9 @@ export function PlayerCard({
   secondaryRole = null,
   agentPool = [],
   bio = null,
+  bannerUrl = null,
+  avatarUrl = null,
+  bannerColor = null,
   layout = "stacked",
 }: {
   username: string;
@@ -38,6 +41,11 @@ export function PlayerCard({
   secondaryRole?: string | null;
   agentPool?: string[];
   bio?: string | null;
+  bannerUrl?: string | null;
+  /** Discord avatar: behind the agent when no Valorant card art is picked. */
+  avatarUrl?: string | null;
+  /** Discord banner colour (0xRRGGBB), which non-Nitro accounts set instead of an image. */
+  bannerColor?: number | null;
   layout?: "stacked" | "split";
 }) {
   const agent = agents.find((a) => a.name.toLowerCase() === mainAgent?.toLowerCase());
@@ -48,7 +56,7 @@ export function PlayerCard({
 
   const card = (
     <div className="min-w-0">
-      <RankPortrait rank={currentRank} agent={agent} art={playerCard?.largeArt} name={mainAgent || username} shape="card" />
+      <RankPortrait rank={currentRank} agent={agent} art={playerCard?.largeArt} avatarUrl={avatarUrl} name={mainAgent || username} shape="card" />
       <div className="showcase-identity relative z-20 mt-auto px-4 pb-6 pt-5">
         <p className="font-display text-[0.625rem] font-semibold uppercase tracking-[0.18em]" style={{ color: agentRoleColor(agent?.role) }}>
           {agent ? `${agent.role}` : mainAgent || ""}
@@ -104,7 +112,15 @@ export function PlayerCard({
     <article aria-label={`${username}'s player card`} className="player-showcase player-showcase-split">
       {card}
       <section aria-label="Stats" className="showcase-stats">
-        <dl className="space-y-5">
+        {/* The Discord banner: the image if they have one, else the banner colour they
+            picked, else the plain panel. */}
+        {bannerUrl ? (
+          <span aria-hidden className="showcase-stats-backdrop" style={{ backgroundImage: `url("${bannerUrl}")` }} />
+        ) : bannerColor !== null ? (
+          <span aria-hidden className="showcase-stats-backdrop" data-color
+            style={{ backgroundColor: `#${bannerColor.toString(16).padStart(6, "0")}` }} />
+        ) : null}
+        <dl className="relative space-y-5">
           <Stat label="Current rank">
             <RankValue name={currentRank} ranks={ranks} fallback="Unranked" />
           </Stat>

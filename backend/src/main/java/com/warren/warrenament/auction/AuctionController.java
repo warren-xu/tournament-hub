@@ -105,6 +105,17 @@ public class AuctionController {
     }
 
     /** Ends the current lot early instead of waiting for the timer. */
+    /** The nominating captain's pick; the admin then opens bidding with /nominate. */
+    @PostMapping("/{auctionId}/pick")
+    public AuctionSnapshot pick(@PathVariable Long auctionId,
+                                @RequestBody PickRequest request,
+                                @AuthenticationPrincipal AppUser user) {
+        return auctions.pickNomination(auctionId, user.userId(), request.playerProfileId());
+    }
+
+    public record PickRequest(Long playerProfileId) {
+    }
+
     @PostMapping("/{auctionId}/lots/{lotId}/close")
     @PreAuthorize("hasRole('ADMIN')")
     public AuctionSnapshot closeLot(@PathVariable Long auctionId, @PathVariable Long lotId) {

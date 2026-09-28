@@ -48,6 +48,8 @@ public class DiscordOAuth2UserService implements OAuth2UserService<OAuth2UserReq
         user.setDiscordId(discordId);
         user.setUsername(username);
         user.setAvatarUrl(avatarUrl);
+        user.setBannerUrl(bannerUrl(discordId, (String) attributes.get("banner")));
+        user.setAccentColor(attributes.get("accent_color") instanceof Number n ? n.intValue() : null);
         // Admins are configured by Discord id, so promotion survives a database reset.
         if (authProperties.adminDiscordIds().contains(discordId)) {
             user.setRole(Role.ADMIN);
@@ -68,6 +70,16 @@ public class DiscordOAuth2UserService implements OAuth2UserService<OAuth2UserReq
         String extension = avatarHash.startsWith("a_") ? "gif" : "png";
         return "https://cdn.discordapp.com/avatars/%s/%s.%s"
                 .formatted(discordId, avatarHash, extension);
+    }
+
+    /** Sized for the card's stats panel; animated banners stay animated. */
+    private static String bannerUrl(String discordId, String bannerHash) {
+        if (bannerHash == null || bannerHash.isBlank()) {
+            return null;
+        }
+        String extension = bannerHash.startsWith("a_") ? "gif" : "png";
+        return "https://cdn.discordapp.com/banners/%s/%s.%s?size=600"
+                .formatted(discordId, bannerHash, extension);
     }
 
     private static String firstNonBlank(String... values) {

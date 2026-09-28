@@ -27,7 +27,9 @@ export function SiteHeader({ me }: { me: Me | null }) {
           </span>
         </Link>
 
-        <nav className="order-3 flex w-full items-center gap-1 overflow-x-auto sm:order-none sm:w-auto" aria-label="Main">
+        {/* Scrolls sideways on narrow screens. overflow-x forces overflow-y to scroll too, so
+            nothing may poke out below the links, or a vertical scrollbar appears. */}
+        <nav className="order-3 flex w-full items-center gap-1 overflow-x-auto overflow-y-hidden sm:order-none sm:w-auto" aria-label="Main">
           {nav.map((item) => {
             const active =
               item.href === "/"
@@ -48,7 +50,7 @@ export function SiteHeader({ me }: { me: Me | null }) {
                 {active ? (
                   <span
                     aria-hidden
-                    className="absolute inset-x-3 -bottom-px block h-0.5 bg-accent"
+                    className="absolute inset-x-3 bottom-0 block h-0.5 bg-accent"
                   />
                 ) : null}
               </Link>

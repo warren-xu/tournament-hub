@@ -14,6 +14,10 @@
   --color-accent: #c93647;
   --color-accent-deep: #a52a39;
 
+  /* Draft state dots */
+  --color-done: #6fcf8f;
+  --color-underway: #e8c45a;
+
   --font-display: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
@@ -107,7 +111,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .live-dot, .pool-hint {
+  .live-dot, .pool-hint, .turn-banner, .turn-banner::before, .turn-dot, .turn-toast {
     animation: none;
   }
   *, *::before, *::after {
@@ -119,7 +123,12 @@
 /* A player opened from the pool: card on the left, stats on the right; stacked on phones. */
 .player-showcase-split { display: grid; }
 .player-showcase-split > :first-child { width: 100%; max-width: 300px; margin-inline: auto; }
-.showcase-stats { border: 1px solid var(--color-line-soft); background: var(--color-panel); padding: 24px 20px; }
+.showcase-stats { position: relative; overflow: hidden; border: 1px solid var(--color-line-soft); background: var(--color-panel); padding: 24px 20px; }
+/* The player's Discord banner behind their stats, washed in ink so text stays readable. */
+.showcase-stats-backdrop { position: absolute; inset: 0; background-size: cover; background-position: center; }
+.showcase-stats-backdrop::after { content: ""; position: absolute; inset: 0; background: rgb(32 42 52 / 0.84); }
+/* A flat banner colour needs a lighter wash than a busy image to still read as that colour. */
+.showcase-stats-backdrop[data-color]::after { background: rgb(32 42 52 / 0.55); }
 @media (min-width: 640px) {
   .player-showcase-split { grid-template-columns: 268px minmax(0, 1fr); }
   .player-showcase-split > :first-child { max-width: none; }
@@ -157,6 +166,50 @@
 .pool-body[data-hint-below="true"] .pool-hint { top: calc(100% + 10px); bottom: auto; }
 .pool-body[data-hint-below="true"] .pool-hint::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--color-bone); }
 @keyframes pool-hint-bob { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, -4px); } }
+
+/* Draft advice: the roles a team still needs, each opening Riot's description below. */
+.role-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 1px solid var(--color-line); background: var(--color-ink); color: var(--color-bone); font-family: var(--font-display); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; cursor: help; transition: border-color 150ms; }
+.role-chip[data-active="true"] { border-color: var(--color-signal); }
+.role-chip:focus-visible { outline: 2px solid var(--color-signal); outline-offset: 2px; }
+/* Unfolds by animating the row from 0fr to 1fr, so it pushes the list down smoothly. */
+.role-detail { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 200ms ease-out, opacity 200ms ease-out; }
+.role-detail > div { overflow: hidden; }
+.role-detail[data-open="true"] { grid-template-rows: 1fr; opacity: 1; }
+
+/* A player's name in the draft room that opens their full card. */
+.player-link { color: inherit; font: inherit; text-align: left; text-transform: inherit; letter-spacing: inherit; cursor: pointer; text-decoration: underline transparent; text-underline-offset: 0.15em; text-decoration-thickness: 1px; transition: text-decoration-color 150ms; }
+.player-link:hover { text-decoration-color: currentColor; }
+.player-link:focus-visible { outline: 2px solid var(--color-signal); outline-offset: 2px; }
+
+/* Whose turn it is to nominate. Your own turn is louder: a thicker accent edge, a bigger
+   line, and it slides in. A bar sweeps the top edge while the captain is still choosing. */
+.turn-banner { position: relative; overflow: hidden; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 16px 20px; border: 1px solid var(--color-line-soft); border-left: 2px solid var(--color-line); background: var(--color-panel); }
+.turn-banner[data-mine] { border-color: var(--color-accent); border-left-width: 4px; background: var(--color-raise); animation: turn-arrive 350ms ease-out; }
+.turn-banner[data-active]::before { content: ""; position: absolute; top: 0; left: 0; width: 35%; height: 2px; background: var(--color-accent); animation: turn-sweep 1.8s ease-in-out infinite; }
+.turn-dot { display: inline-block; flex-shrink: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--color-accent); animation: turn-pulse 1.2s ease-in-out infinite; }
+.turn-dot[data-still] { animation: none; opacity: .6; }
+.turn-tag { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--color-accent); font-family: var(--font-display); font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--color-signal); }
+.turn-tag .turn-dot { width: 6px; height: 6px; }
+.turn-sound { min-height: 36px; padding: 0 12px; border: 1px solid var(--color-line); font-family: var(--font-display); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--color-muted); cursor: pointer; transition: border-color 150ms, color 150ms; }
+.turn-sound:hover { border-color: var(--color-dim); color: var(--color-bone); }
+.turn-sound:focus-visible { outline: 2px solid var(--color-signal); outline-offset: 2px; }
+/* The pop-up that announces your turn, under the site header. */
+.turn-toast { position: fixed; top: 76px; right: 16px; z-index: 50; display: flex; align-items: center; gap: 14px; max-width: min(22rem, calc(100vw - 32px)); padding: 14px 16px; background: var(--color-accent); color: var(--color-bone); animation: toast-in 250ms ease-out; }
+.turn-toast .turn-dot { background: var(--color-bone); }
+.turn-toast-close { display: grid; place-items: center; width: 32px; height: 32px; margin-left: auto; color: var(--color-bone); cursor: pointer; }
+.turn-toast-close:focus-visible { outline: 2px solid var(--color-bone); }
+@keyframes turn-sweep { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+@keyframes turn-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+@keyframes turn-arrive { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes toast-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+
+/* Nominate, in the captain's Best available list. */
+.nominate-btn { flex-shrink: 0; min-height: 36px; padding: 0 14px; border: 1px solid var(--color-line); background: transparent; color: var(--color-bone); font-family: var(--font-display); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; cursor: pointer; transition: background-color 150ms, border-color 150ms, transform 100ms; }
+.nominate-btn:hover:not(:disabled) { border-color: var(--color-accent); background: var(--color-accent); }
+.nominate-btn:active:not(:disabled) { transform: translateY(1px); background: var(--color-accent-deep); }
+.nominate-btn:focus-visible { outline: 2px solid var(--color-signal); outline-offset: 2px; }
+.nominate-btn:disabled { cursor: not-allowed; opacity: .4; }
+.nominate-btn[data-picked] { border-color: var(--color-accent); color: var(--color-signal); opacity: 1; }
 
 .suggestions-toggle { position: fixed; right: 16px; bottom: 16px; z-index: 40; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--color-line); background: var(--color-panel); color: var(--color-bone); font-size: 13px; cursor: pointer; }
 .suggestions-toggle:hover { border-color: var(--color-dim); }

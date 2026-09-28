@@ -130,7 +130,8 @@ export function ProfileForm({
             so the preview would look softer than the real thing on the players page. */}
         <div className="w-full max-w-67">
           <PlayerCard username={username} riotId={riotId} mainAgent={mainAgent}
-            currentRank={currentRank} peakRank={peakRank} agents={agents} ranks={ranks} playerCard={playerCard} />
+            currentRank={currentRank} peakRank={peakRank} agents={agents} ranks={ranks} playerCard={playerCard}
+            avatarUrl={initial?.avatarUrl ?? null} />
           <p className="mt-3 text-xs text-muted">Choose your artwork, main agent and rank to make it yours. Save your card to share it with captains.</p>
         </div>
       </aside>
