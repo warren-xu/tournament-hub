@@ -37,6 +37,10 @@ class BudgetRulesTest {
         assertThat(BudgetRules.canBid(4, 0, 5, 5)).isFalse();   // cannot reach the floor
         assertThat(BudgetRules.canBid(100, 5, 5, 1)).isFalse(); // no slot to fill
         assertThat(BudgetRules.canBid(0, 0, 5, 1)).isFalse();   // broke
+        // A floor of 0 doesn't make full or broke teams worth waiting for.
+        assertThat(BudgetRules.canBid(100, 5, 5, 0)).isFalse();
+        assertThat(BudgetRules.canBid(0, 0, 5, 0)).isFalse();
+        assertThat(BudgetRules.canBid(1, 0, 5, 0)).isTrue();
     }
 
     @Test

@@ -6,8 +6,8 @@ import type { Me } from "@/lib/types";
 import { Avatar } from "./ui";
 
 const NAV = [
-  { href: "/", label: "Players" },
-  { href: "/tournaments", label: "Tournaments" },
+  { href: "/", label: "Tournaments" },
+  { href: "/players", label: "Players" },
   { href: "/profile", label: "My Profile" },
 ];
 
@@ -31,12 +31,11 @@ export function SiteHeader({ me }: { me: Me | null }) {
             nothing may poke out below the links, or a vertical scrollbar appears. */}
         <nav className="order-3 flex w-full items-center gap-1 overflow-x-auto overflow-y-hidden sm:order-none sm:w-auto" aria-label="Main">
           {nav.map((item) => {
+            // Tournaments is home, and a tournament's own pages live under /t/.
             const active =
               item.href === "/"
-                ? pathname === "/"
-                : item.href === "/tournaments"
-                  ? pathname.startsWith("/tournaments") || pathname.startsWith("/t/")
-                  : pathname.startsWith(item.href);
+                ? pathname === "/" || pathname.startsWith("/t/")
+                : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}

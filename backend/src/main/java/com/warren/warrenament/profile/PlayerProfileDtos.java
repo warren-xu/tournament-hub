@@ -60,8 +60,7 @@ public final class PlayerProfileDtos {
             @Size(max = 1000) String bio,
             Set<String> agents,
             @Size(max = 64) String mainAgent,
-            @Positive Long playerCardId,
-            @Size(max = 32) String peakRank
+            @Positive Long playerCardId
     ) {
     }
 }

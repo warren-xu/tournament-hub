@@ -20,11 +20,12 @@ public final class BudgetRules {
     }
 
     /**
-     * Whether a team can still take part in a lot at all: it needs a free slot and enough
-     * credits to meet the floor. Teams that cannot are not waited on when a lot is deciding
-     * whether every captain has locked in.
+     * Whether a team is still a real bidder: it needs a free slot and enough credits for the
+     * floor (never less than one). Teams that aren't are not waited on when a lot is deciding
+     * whether every captain has locked in, and once no team is, the leftovers are dealt out
+     * at random.
      */
     public static boolean canBid(int remainingCredits, int rosterCount, int rosterSize, int minBid) {
-        return maxBid(remainingCredits, rosterCount, rosterSize) >= minBid;
+        return rosterCount < rosterSize && remainingCredits >= Math.max(1, minBid);
     }
 }

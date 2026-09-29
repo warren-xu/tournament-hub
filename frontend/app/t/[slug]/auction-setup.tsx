@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { buttonClass, Eyebrow } from "@/components/ui";
+import { LocalTime } from "@/components/local-time";
 import { api, ApiCallError } from "@/lib/client-api";
 import type {
   AuctionSnapshot,
@@ -10,28 +11,51 @@ import type {
   TournamentStatus,
 } from "@/lib/types";
 
+/** "2026-10-02T23:30:00Z" → the "YYYY-MM-DDTHH:mm" a datetime-local input wants, in local time. */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+/** How the queue splits across the teams, or what's needed to make it split evenly. */
+function splitCopy(teams: number, seated: number, queued: number): string {
+  if (teams < 2) return "Add at least two teams.";
+  const people = seated + queued;
+  const over = people % teams;
+  if (over === 0) return `Teams of ${people / teams}, captains included.`;
+  return `${people} people don't split across ${teams} teams: queue ${teams - over} more or remove ${over}.`;
+}
+
 /**
- * Everything an admin does before the draft room takes over: open sign-ups,
- * create the captains' teams, build the lot queue.
+ * Everything an admin does before the draft room takes over: open sign-ups, set the
+ * date, create the captains' teams. The queue itself is managed from the draft pool.
  */
 export function AuctionSetup({
   tournamentId,
   tournamentStatus,
+  startsAt,
   auction,
   approvedCount,
   teamCount,
+  seatedCount,
 }: {
   tournamentId: number;
   tournamentStatus: TournamentStatus;
+  startsAt: string | null;
   auction: AuctionSnapshot | null;
   approvedCount: number;
   teamCount: number;
+  /** People already on a team (the captains, before the draft). */
+  seatedCount: number;
 }) {
   const router = useRouter();
   const [profiles, setProfiles] = useState<ProfileView[]>([]);
   const [teamName, setTeamName] = useState("");
   const [captainUserId, setCaptainUserId] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  // Only filled in once opened: the input needs the browser's time zone, which the server can't know.
+  const [schedule, setSchedule] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,6 +91,15 @@ export function AuctionSetup({
       setCaptainUserId("");
     });
 
+  const saveSchedule = (value: string) =>
+    run("schedule", async () => {
+      await api(`/api/tournaments/${tournamentId}/schedule`, {
+        method: "PUT",
+        json: { startsAt: value ? new Date(value).toISOString() : null },
+      });
+      setSchedule(null);
+    });
+
   return (
     <div className="border border-line bg-panel">
       <div className="flex items-center gap-3 border-b border-line-soft px-5 py-3">
@@ -81,8 +114,41 @@ export function AuctionSetup({
             01 · Registration
           </p>
           <p className="tabular mt-2 text-sm text-dim">
-            <span className="text-bone">{approvedCount}</span> approved players
+            <span className="text-bone">{approvedCount}</span> in the queue
           </p>
+          <div className="mt-3 text-sm">
+            {schedule === null ? (
+              <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-dim">
+                <span>
+                  Starts{" "}
+                  <span className="text-bone">{startsAt ? <LocalTime iso={startsAt} /> : "TBA"}</span>
+                </span>
+                <button type="button" onClick={() => setSchedule(toLocalInput(startsAt))}
+                  className="text-xs text-muted underline underline-offset-4 hover:text-bone">
+                  {startsAt ? "Change" : "Set a date"}
+                </button>
+              </p>
+            ) : (
+              <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); saveSchedule(schedule); }}>
+                <label className="block text-xs text-muted">
+                  Start date and time (your time zone)
+                  <input type="datetime-local" value={schedule} onChange={(e) => setSchedule(e.target.value)}
+                    className="mt-1 w-full border border-line bg-ink px-3 py-2 text-sm text-bone focus:border-accent focus:outline-none" />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button type="submit" disabled={busy !== null} className={buttonClass("default")}>
+                    {busy === "schedule" ? "Saving…" : "Save"}
+                  </button>
+                  {startsAt ? (
+                    <button type="button" disabled={busy !== null} onClick={() => saveSchedule("")} className={buttonClass("ghost")}>
+                      Clear date
+                    </button>
+                  ) : null}
+                  <button type="button" onClick={() => setSchedule(null)} className={buttonClass("ghost")}>Cancel</button>
+                </div>
+              </form>
+            )}
+          </div>
           <div className="mt-4 flex flex-wrap gap-2">
             {(["REGISTRATION", "DRAFTING", "LIVE"] as const).map((status) => (
               <button
@@ -116,6 +182,7 @@ export function AuctionSetup({
           <p className="tabular mt-2 text-sm text-dim">
             <span className="text-bone">{teamCount}</span> created
           </p>
+          <p className="mt-1 text-xs text-dim">Each captain leaves the queue and leads their team.</p>
           <div className="mt-4 space-y-2">
             <input
               value={teamName}
@@ -156,6 +223,9 @@ export function AuctionSetup({
               <>
                 <span className="text-bone">{auction.pendingLots}</span> players
                 queued · {auction.status.toLowerCase()}
+                {auction.status === "SETUP" ? (
+                  <span className="mt-1 block text-xs">{splitCopy(teamCount, seatedCount, auction.pendingLots)}</span>
+                ) : null}
               </>
             ) : (
               "No auction yet"
@@ -177,28 +247,11 @@ export function AuctionSetup({
                 {busy === "create" ? "Creating…" : "Create the auction"}
               </button>
             ) : (
-              <>
-                <button
-                  onClick={() =>
-                    run("queue", () =>
-                      api(`/api/auctions/${auction.auctionId}/queue?shuffle=true`, {
-                        method: "POST",
-                      }),
-                    )
-                  }
-                  disabled={busy !== null || auction.status !== "SETUP"}
-                  className={buttonClass("default", "w-full")}
-                >
-                  {busy === "queue"
-                    ? "Building…"
-                    : `Shuffle ${approvedCount} into the queue`}
-                </button>
-                <p className="text-xs text-dim">
-                  {auction.status === "SETUP"
-                    ? "The queue can only be rebuilt before the auction starts."
-                    : "Start, pause and nominate from the draft room."}
-                </p>
-              </>
+              <p className="text-xs text-dim">
+                {auction.status === "SETUP"
+                  ? "The queue runs highest rank first. Sign-ups join it on their own; add anyone else from the draft pool below. Team size is set when you start the draft."
+                  : "Start, pause and nominate from the draft room."}
+              </p>
             )}
           </div>
         </section>

@@ -2,8 +2,10 @@ package com.warren.warrenament.tournament;
 
 import com.warren.warrenament.auth.AppUser;
 import com.warren.warrenament.tournament.TournamentDtos.CreateTournamentRequest;
+import com.warren.warrenament.tournament.TournamentDtos.QueuePlayersRequest;
 import com.warren.warrenament.tournament.TournamentDtos.RegistrationView;
 import com.warren.warrenament.tournament.TournamentDtos.TournamentView;
+import com.warren.warrenament.tournament.TournamentDtos.UpdateScheduleRequest;
 import com.warren.warrenament.tournament.TournamentDtos.UpdateStatusRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -16,7 +18,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -60,6 +61,13 @@ public class TournamentController {
         return service.updateStatus(id, request.status());
     }
 
+    @PutMapping("/{id}/schedule")
+    @PreAuthorize("hasRole('ADMIN')")
+    public TournamentView updateSchedule(@PathVariable Long id,
+                                         @RequestBody UpdateScheduleRequest request) {
+        return service.updateSchedule(id, request.startsAt());
+    }
+
     /** Hard delete, taking teams, registrations and the auction with it. Admins only. */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
@@ -79,10 +87,26 @@ public class TournamentController {
         return service.register(id, user.userId());
     }
 
-    @PutMapping("/registrations/{registrationId}")
+    /** Leave the pool before the draft starts. */
+    @DeleteMapping("/{id}/registrations/me")
+    public ResponseEntity<Void> withdraw(@PathVariable Long id,
+                                         @AuthenticationPrincipal AppUser user) {
+        service.withdraw(id, user.userId());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Shuffle chosen players from the pool into the queue. Before the draft starts. */
+    @PostMapping("/{id}/queue")
     @PreAuthorize("hasRole('ADMIN')")
-    public RegistrationView setRegistrationStatus(@PathVariable Long registrationId,
-                                                  @RequestParam RegistrationStatus status) {
-        return service.setRegistrationStatus(registrationId, status);
+    public List<RegistrationView> queuePlayers(@PathVariable Long id,
+                                               @Valid @RequestBody QueuePlayersRequest request) {
+        return service.queuePlayers(id, request.playerProfileIds());
+    }
+
+    @DeleteMapping("/{id}/queue/{profileId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> removeFromQueue(@PathVariable Long id, @PathVariable Long profileId) {
+        service.removeFromQueue(id, profileId);
+        return ResponseEntity.noContent().build();
     }
 }

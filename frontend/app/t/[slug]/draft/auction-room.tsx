@@ -6,6 +6,7 @@ import { AdminRail } from "./admin-rail";
 import { DraftAdvice } from "./draft-advice";
 import { PlayerName, ProfileOpener } from "./player-name";
 import { PlayerDialog } from "@/components/player-dialog";
+import { PlayerCard } from "@/components/player-card";
 import { Avatar, RankBadge, rankIndex, Tag } from "@/components/ui";
 import {
   useAuction,
@@ -21,6 +22,7 @@ import type {
   AuctionSnapshot,
   AuctionTeamView,
   Me,
+  PlayerSummary,
   ProfileView,
   RankView,
 } from "@/lib/types";
@@ -356,6 +358,18 @@ function LotCard({
   const lot = snapshot.currentLot;
 
   if (!lot) {
+    // A captain's pick is the newest news, so it takes over from the last reveal.
+    if (snapshot.pickedPlayer) {
+      return (
+        <NominatedCard
+          player={snapshot.pickedPlayer}
+          profile={profiles.get(snapshot.pickedPlayer.profileId)}
+          teamName={snapshot.teams.find((t) => t.teamId === snapshot.turnTeamId)?.name ?? null}
+          agents={agents}
+          ranks={ranks}
+        />
+      );
+    }
     // The last reveal stays up between players: it is the only time the amounts exist.
     if (reveal) {
       return <RevealCard reveal={reveal} myTeamId={myTeamId} ranks={ranks} />;
@@ -496,6 +510,50 @@ function NomineeDetails({
         </div>
       ) : null}
     </dl>
+  );
+}
+
+/**
+ * Who a captain has nominated, while the admin gets ready to open bidding: their full card
+ * and notes, so the room can size them up before the clock starts.
+ */
+function NominatedCard({
+  player,
+  profile,
+  teamName,
+  agents,
+  ranks,
+}: {
+  player: PlayerSummary;
+  profile: ProfileView | undefined;
+  teamName: string | null;
+  agents: AgentView[];
+  ranks: Map<string, RankView>;
+}) {
+  return (
+    <div className="corner-cut bg-panel p-6 sm:p-8">
+      <p className="eyebrow">{teamName ? `Nominated by ${teamName}` : "Nominated"}</p>
+      <p className="mt-1 text-sm text-muted">Bidding opens once the admin starts the clock.</p>
+      <div className="mt-5">
+        {profile ? (
+          <PlayerCard username={profile.username} riotId={profile.riotId} playerCard={profile.playerCard}
+            mainAgent={profile.mainAgent} currentRank={profile.currentRank} peakRank={profile.peakRank}
+            agents={agents} ranks={[...new Set(ranks.values())]}
+            primaryRole={profile.primaryRole} secondaryRole={profile.secondaryRole} agentPool={profile.agents} bio={profile.bio}
+            bannerUrl={profile.bannerUrl} bannerColor={profile.accentColor} avatarUrl={profile.avatarUrl}
+            layout="split" />
+        ) : (
+          // No full profile loaded (e.g. deleted mid-draft): the summary is all there is.
+          <div className="flex items-center gap-4">
+            <Avatar src={player.avatarUrl} name={player.username} size={64} />
+            <div>
+              <h2 className="text-4xl uppercase leading-none tracking-tight">{player.username}</h2>
+              <div className="mt-3"><RankBadge name={player.currentRank} ranks={ranks} size={24} /></div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -984,15 +1042,18 @@ function TeamsRail({
                 <span>
                   {team.rosterCount}/{rosterSize} players
                 </span>
-                <span>max bid {team.maxBid}</span>
               </div>
 
               {team.roster.length > 0 ? (
-                <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+                <ul className="mt-2 space-y-1 text-sm text-muted">
                   {team.roster.map((entry) => (
-                    <li key={entry.profileId} className="tabular">
-                      <PlayerName profileId={entry.profileId}>{entry.username}</PlayerName>
-                      <span className="text-dim"> {entry.pricePaid}</span>
+                    <li key={entry.profileId} className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 truncate">
+                        <PlayerName profileId={entry.profileId}>{entry.username}</PlayerName>
+                      </span>
+                      {entry.username === team.captainUsername ? (
+                        <span className="shrink-0 text-xs uppercase tracking-wider text-dim">Captain</span>
+                      ) : null}
                     </li>
                   ))}
                 </ul>

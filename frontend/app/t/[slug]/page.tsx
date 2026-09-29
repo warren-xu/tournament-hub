@@ -1,21 +1,28 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { RegisterButton } from "./register-button";
-import { PoolAdmin } from "./pool-admin";
+import { SignUp } from "./sign-up";
+import { CalendarLinks } from "./calendar-links";
+import { DraftPool } from "./draft-pool";
+import { TeamName } from "./team-name";
+import { DeleteTeam } from "./delete-team";
 import { AuctionSetup } from "./auction-setup";
 import {
-  Avatar,
   EmptyState,
   Eyebrow,
   LinkButton,
   OfflineNotice,
   SectionHead,
 } from "@/components/ui";
+import { LocalTime } from "@/components/local-time";
+import { tournamentEvent } from "@/lib/calendar";
+import { siteOrigin } from "@/lib/site-origin";
 import {
   backendReachable,
+  getAgents,
   getAuctionByTournament,
   getMe,
   getMyProfile,
+  getProfiles,
+  getRanks,
   getRegistrations,
   getTeams,
   getTournamentBySlug,
@@ -44,22 +51,40 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
   const tournament = await getTournamentBySlug(slug);
   if (!tournament) notFound();
 
-  const [me, myProfile, registrations, teams, auction] = await Promise.all([
+  const [me, myProfile, registrations, teams, auction, agents, ranks, origin, profiles] = await Promise.all([
     getMe(),
     getMyProfile(),
     getRegistrations(tournament.id),
     getTeams(tournament.id),
     getAuctionByTournament(tournament.id),
+    getAgents(),
+    getRanks(),
+    siteOrigin(),
+    getProfiles(),
   ]);
 
   const pool = registrations ?? [];
   const approved = pool.filter((r) => r.status === "APPROVED");
-  const pending = pool.filter((r) => r.status === "PENDING");
   const roster = teams ?? [];
   const isAdmin = me?.role === "ADMIN";
   const myRegistration = myProfile
     ? pool.find((r) => r.player.id === myProfile.id)
     : undefined;
+  const event = tournamentEvent(tournament, origin);
+  // Players see who signed up (they stay listed once drafted). Admins see every player,
+  // so they can add anyone to the queue by hand.
+  const allPlayers = profiles ?? [];
+  // Rosters list profiles and teams name their captain by user, so match the two up.
+  const captainUserIds = new Set(roster.map((team) => team.captainUserId));
+  const captainProfileIds = new Set(
+    allPlayers.filter((p) => captainUserIds.has(p.userId)).map((p) => p.id),
+  );
+  const poolPlayers = isAdmin ? allPlayers : approved.map((r) => r.player);
+
+  // The pool and teams can change until the draft starts.
+  const settingUp = !auction || auction.status === "SETUP";
+  // People already on a team (the captains, before the draft), for the admin's split readout.
+  const seated = roster.reduce((n, team) => n + team.roster.length, 0);
 
   return (
     <div className="mx-auto max-w-[1400px] px-6 py-12">
@@ -74,39 +99,24 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
           </h1>
           <dl className="tabular mt-5 flex flex-wrap gap-x-8 gap-y-2 text-sm text-muted">
             <div className="flex gap-2">
-              <dt>Budget</dt>
-              <dd className="text-bone">{tournament.creditBudget} credits</dd>
-            </div>
-            <div className="flex gap-2">
-              <dt>Roster</dt>
-              <dd className="text-bone">{tournament.rosterSize} players</dd>
-            </div>
-            <div className="flex gap-2">
-              <dt>Min bid</dt>
-              <dd className="text-bone">{tournament.minBid}</dd>
-            </div>
-            <div className="flex gap-2">
-              <dt>Bidding</dt>
-              <dd className="text-bone">Sealed</dd>
+              <dt>Starts</dt>
+              <dd className="text-bone">
+                {tournament.startsAt ? <LocalTime iso={tournament.startsAt} /> : "To be announced"}
+              </dd>
             </div>
           </dl>
+          {event && tournament.status !== "COMPLETE" ? (
+            <div className="mt-5">
+              <CalendarLinks event={event} slug={slug} />
+            </div>
+          ) : null}
         </div>
 
-        <div className="flex flex-col items-start gap-3">
-          {auction ? (
-            <LinkButton href={`/t/${slug}/draft`} tone="primary">
-              {auction.status === "LIVE" ? "Enter the draft" : "Draft room"}
-            </LinkButton>
-          ) : null}
-          {tournament.status === "REGISTRATION" ? (
-            <RegisterButton
-              tournamentId={tournament.id}
-              signedIn={Boolean(me)}
-              registered={Boolean(myRegistration)}
-              status={myRegistration?.status ?? null}
-            />
-          ) : null}
-        </div>
+        {auction ? (
+          <LinkButton href={`/t/${slug}/draft`} tone="primary">
+            {auction.status === "LIVE" ? "Enter draft room" : "Draft room"}
+          </LinkButton>
+        ) : null}
       </div>
 
       {isAdmin ? (
@@ -114,9 +124,11 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
           <AuctionSetup
             tournamentId={tournament.id}
             tournamentStatus={tournament.status}
+            startsAt={tournament.startsAt}
             auction={auction}
             approvedCount={approved.length}
             teamCount={roster.length}
+            seatedCount={seated}
           />
         </div>
       ) : null}
@@ -125,49 +137,25 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
         <SectionHead
           label={`${roster.length} teams`}
           title="Rosters"
-          action={
-            auction ? (
-              <Link
-                href={`/t/${slug}/draft`}
-                className="font-display text-sm uppercase tracking-wider text-dim transition-colors hover:text-bone"
-              >
-                Watch the draft →
-              </Link>
-            ) : null
-          }
         />
 
         {roster.length === 0 ? (
           <EmptyState
             title="No teams yet"
-            detail="An admin creates a team for each captain before the draft can start."
+            detail="An admin adds a team for each captain before the draft starts. Captains leave the queue and lead their team."
           />
         ) : (
           <ul className="grid gap-px border border-line bg-line md:grid-cols-2 xl:grid-cols-3">
             {roster.map((team) => {
-              const spent = tournament.creditBudget - team.remainingCredits;
-              const pct = Math.round((spent / tournament.creditBudget) * 100);
               return (
                 <li key={team.id}>
                   <article className="flex h-full flex-col bg-panel p-5">
                     <div className="flex items-baseline justify-between gap-3">
-                      <h3 className="font-display text-xl uppercase tracking-wide">
-                        {team.name}
-                      </h3>
-                      <p className="tabular font-display text-lg font-semibold text-signal">
-                        {team.remainingCredits}
-                        <span className="ml-1 text-xs text-dim">left</span>
-                      </p>
-                    </div>
-
-                    <div
-                      className="mt-3 h-1 w-full bg-raise"
-                      role="img"
-                      aria-label={`${spent} of ${tournament.creditBudget} credits spent`}
-                    >
-                      <div
-                        className="h-full bg-accent-deep"
-                        style={{ width: `${pct}%` }}
+                      <TeamName
+                        teamId={team.id}
+                        name={team.name}
+                        logoUrl={team.logoUrl}
+                        editable={isAdmin || me?.userId === team.captainUserId}
                       />
                     </div>
 
@@ -180,25 +168,21 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
                           <span className="truncate text-bone">
                             {member.username}
                           </span>
-                          <span className="tabular shrink-0 text-muted">
-                            {member.pricePaid}
-                          </span>
-                        </li>
-                      ))}
-                      {Array.from({
-                        length: Math.max(
-                          0,
-                          tournament.rosterSize - team.roster.length,
-                        ),
-                      }).map((_, i) => (
-                        <li
-                          key={`empty-${i}`}
-                          className="border-b border-dashed border-line-soft pb-1.5 text-dim"
-                        >
-                          Open slot
+                          {captainProfileIds.has(member.profileId) ? (
+                            <span className="shrink-0 text-xs uppercase tracking-wider text-dim">Captain</span>
+                          ) : (
+                            <span className="tabular shrink-0 text-muted">
+                              {member.pricePaid}
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>
+                    {isAdmin && settingUp ? (
+                      <div className="mt-auto">
+                        <DeleteTeam teamId={team.id} name={team.name} />
+                      </div>
+                    ) : null}
                   </article>
                 </li>
               );
@@ -208,38 +192,45 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
       </section>
 
       <section className="pt-12">
+        {tournament.status === "REGISTRATION" ? (
+          <div className="mb-8">
+            <SignUp
+              tournament={tournament}
+              signedIn={Boolean(me)}
+              profile={myProfile}
+              signedUp={myRegistration?.status === "APPROVED"}
+              locked={!settingUp}
+              event={event}
+              agents={agents ?? []}
+              ranks={ranks ?? []}
+            />
+          </div>
+        ) : null}
         <SectionHead
-          label={`${approved.length} approved · ${pending.length} pending`}
+          label={isAdmin
+            ? `${approved.length} signed up · ${allPlayers.length} players`
+            : `${approved.length} signed up`}
           title="Draft pool"
         />
-
-        {pool.length === 0 ? (
+        {poolPlayers.length === 0 ? (
           <EmptyState
-            title="Nobody has registered"
-            detail={
-              tournament.status === "REGISTRATION"
-                ? "Players register from this page once they have filled in their card."
-                : "Registration is not open for this tournament."
-            }
+            title={isAdmin ? "No players yet" : "Nobody has signed up yet"}
+            detail={isAdmin
+              ? "Players appear here once they sign in and create a profile."
+              : tournament.status === "REGISTRATION"
+                ? "Sign up above to be the first in the queue."
+                : "Sign-ups are not open for this tournament."}
           />
-        ) : isAdmin ? (
-          <PoolAdmin registrations={pool} />
         ) : (
-          <ul className="grid gap-px border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
-            {approved.map((r) => (
-              <li key={r.id} className="flex items-center gap-3 bg-panel p-4">
-                <Avatar src={r.player.avatarUrl} name={r.player.username} />
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-bone">
-                    {r.player.username}
-                  </p>
-                  <p className="truncate text-xs text-dim">
-                    {r.player.primaryRole ?? "role unset"}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <DraftPool
+            tournamentId={tournament.id}
+            profiles={poolPlayers}
+            queuedIds={approved.map((r) => r.player.id)}
+            captainUserIds={roster.map((team) => team.captainUserId)}
+            onTeamIds={roster.flatMap((team) => team.roster.map((m) => m.profileId))}
+            isAdmin={isAdmin}
+            editable={settingUp}
+          />
         )}
       </section>
     </div>

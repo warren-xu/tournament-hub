@@ -60,7 +60,10 @@ public class AuctionViewMapper {
                 tournament.getMinBid(),
                 lockedInTeamIds(lot),
                 captainsExpected(tournament),
-                lot.getStatus() == LotStatus.SOLD && lot.getWinningBid() == 0,
+                // Dealt out at the end, not won: the winner never bid on it. (Price alone can't
+                // tell, since a winning bid can be 0.)
+                lot.getStatus() == LotStatus.SOLD && bidsThisRound(lot).stream()
+                        .noneMatch(bid -> bid.getTeamId().equals(lot.getWinningTeamId())),
                 lot.getEndsAt(),
                 lot.getVersion());
     }

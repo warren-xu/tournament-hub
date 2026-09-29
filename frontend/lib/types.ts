@@ -106,6 +106,8 @@ export interface TournamentView {
   creditBudget: number;
   rosterSize: number;
   minBid: number;
+  /** ISO start time; null until an admin announces a date. */
+  startsAt: string | null;
 }
 
 export interface RegistrationView {

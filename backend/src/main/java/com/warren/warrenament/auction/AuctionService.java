@@ -5,6 +5,8 @@ import com.warren.warrenament.auction.AuctionDtos.AuctionSnapshot;
 import com.warren.warrenament.common.Exceptions.BadRequestException;
 import com.warren.warrenament.common.Exceptions.NotFoundException;
 import com.warren.warrenament.profile.PlayerProfile;
+import com.warren.warrenament.rank.Rank;
+import com.warren.warrenament.rank.RankRepository;
 import com.warren.warrenament.team.Team;
 import com.warren.warrenament.team.TeamMember;
 import com.warren.warrenament.team.TeamMemberRepository;
@@ -31,6 +33,9 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import java.util.HashMap;
+import java.util.Comparator;
 import java.util.Random;
 
 /** Admin-driven lifecycle of an auction: build the queue, nominate, pause, close, undo. */
@@ -50,6 +55,7 @@ public class AuctionService {
     private final TeamMemberRepository teamMembers;
     private final AuctionViewMapper mapper;
     private final ApplicationEventPublisher events;
+    private final RankRepository ranks;
 
     public AuctionService(AuctionRepository auctions,
                           LotRepository lots,
@@ -58,7 +64,8 @@ public class AuctionService {
                           TeamRepository teams,
                           TeamMemberRepository teamMembers,
                           AuctionViewMapper mapper,
-                          ApplicationEventPublisher events) {
+                          ApplicationEventPublisher events,
+                          RankRepository ranks) {
         this.auctions = auctions;
         this.lots = lots;
         this.tournaments = tournaments;
@@ -67,6 +74,7 @@ public class AuctionService {
         this.teamMembers = teamMembers;
         this.mapper = mapper;
         this.events = events;
+        this.ranks = ranks;
     }
 
     @Transactional(readOnly = true)
@@ -109,15 +117,50 @@ public class AuctionService {
         auctions.findByTournamentId(tournamentId).ifPresent(a -> {
             throw new BadRequestException("This tournament already has an auction");
         });
-        return mapper.toSnapshot(auctions.save(new Auction(tournament)));
+        Auction auction = auctions.save(new Auction(tournament));
+        // Everyone already in the pool goes straight into the queue, in sign-up order.
+        return buildQueue(auction.getId());
+    }
+
+    /**
+     * Adds a player who just joined the pool to the back of the queue. Only while the
+     * draft is being set up: once it starts the queue is fixed, and with no auction yet
+     * {@link #createForTournament} picks them up from their registration.
+     */
+    @Transactional
+    public void enqueue(Long tournamentId, PlayerProfile player) {
+        auctions.findByTournamentId(tournamentId)
+                .filter(auction -> auction.getStatus() == AuctionStatus.SETUP)
+                .filter(auction -> lots.findByAuctionIdAndPlayerProfileId(auction.getId(), player.getId()).isEmpty())
+                .ifPresent(auction -> lots.save(new Lot(auction, player, lots.maxSeq(auction.getId()) + 1)));
+    }
+
+    /** Takes a player back out of the queue. Refuses once the draft has started. */
+    @Transactional
+    public void dequeue(Long tournamentId, Long playerProfileId) {
+        requireNotStarted(tournamentId);
+        auctions.findByTournamentId(tournamentId)
+                .flatMap(auction -> lots.findByAuctionIdAndPlayerProfileId(auction.getId(), playerProfileId))
+                .ifPresent(lots::delete);
+    }
+
+    /** For changes to the pool or the teams, which only make sense before the first nomination. */
+    @Transactional(readOnly = true)
+    public void requireNotStarted(Long tournamentId) {
+        auctions.findByTournamentId(tournamentId)
+                .filter(auction -> auction.getStatus() != AuctionStatus.SETUP)
+                .ifPresent(auction -> {
+                    throw new BadRequestException("The draft has already started, so the pool and teams are locked.");
+                });
     }
 
     /**
      * Builds the lot queue from approved registrations that are not already on a roster.
      * Safe to re-run while in SETUP; it replaces any lots that have not been nominated yet.
+     * The order they're stored in doesn't matter: the queue is always read highest rank first.
      */
     @Transactional
-    public AuctionSnapshot buildQueue(Long auctionId, boolean shuffle) {
+    public AuctionSnapshot buildQueue(Long auctionId) {
         Auction auction = require(auctionId);
         if (auction.getStatus() != AuctionStatus.SETUP) {
             throw new BadRequestException("The queue can only be rebuilt while the auction is in SETUP");
@@ -136,10 +179,6 @@ public class AuctionService {
                         .filter(p -> lots.findByAuctionIdAndPlayerProfileId(auctionId, p.getId()).isEmpty())
                         .toList());
 
-        if (shuffle) {
-            Collections.shuffle(pool);
-        }
-
         int seq = lots.maxSeq(auctionId);
         for (PlayerProfile player : pool) {
             lots.save(new Lot(auction, player, ++seq));
@@ -157,6 +196,9 @@ public class AuctionService {
         List<Team> roster = teams.findByTournamentId(tournament.getId());
         if (roster.isEmpty()) {
             throw new BadRequestException("Create at least one team before starting the auction");
+        }
+        if (auction.getStatus() == AuctionStatus.SETUP) {
+            fitRosterSizeToPool(auction, tournament, roster);
         }
         requireSlotsMatchPool(auction, tournament, roster);
         auction.setStatus(AuctionStatus.LIVE);
@@ -247,9 +289,8 @@ public class AuctionService {
                 return open(auction, picked);
             }
         }
-        Lot lot = lots.findFirstByAuctionIdAndStatusOrderBySeqAsc(auctionId, LotStatus.PENDING)
-                // Nobody bid on them the first time; they go back up rather than vanish.
-                .or(() -> lots.findFirstByAuctionIdAndStatusOrderBySeqAsc(auctionId, LotStatus.UNSOLD))
+        // Unsold players come after everyone still unseen: they go back up rather than vanish.
+        Lot lot = remainingLots(auctionId).stream().findFirst()
                 .orElseThrow(() -> new BadRequestException("No players left in the queue"));
         return open(auction, lot);
     }
@@ -643,10 +684,26 @@ public class AuctionService {
         return dealt;
     }
 
-    /** Players still waiting: never nominated, or nominated and nobody bid. */
+    /**
+     * Players still waiting (never nominated, or nominated and nobody bid), in queue order:
+     * unseen before unsold, then highest rank first, then whoever joined first. Sorted on
+     * every read, so the order follows rank changes made after joining.
+     */
     private List<Lot> remainingLots(Long auctionId) {
+        Map<String, Integer> tiers = new HashMap<>();
+        for (Rank rank : ranks.findAll()) {
+            tiers.put(rank.getName().toLowerCase(Locale.ROOT), rank.getTier());
+        }
+        // No rank (or one we don't recognise) sorts below every real one.
+        java.util.function.ToIntFunction<Lot> tier = lot -> {
+            String name = lot.getPlayerProfile().getCurrentRank();
+            return name == null ? -1 : tiers.getOrDefault(name.toLowerCase(Locale.ROOT), -1);
+        };
         return lots.findByAuctionIdOrderBySeqAsc(auctionId).stream()
                 .filter(lot -> lot.getStatus() == LotStatus.PENDING || lot.getStatus() == LotStatus.UNSOLD)
+                .sorted(Comparator.comparing((Lot lot) -> lot.getStatus() == LotStatus.UNSOLD)
+                        .thenComparing(Comparator.comparingInt(tier).reversed())
+                        .thenComparingInt(Lot::getSeq))
                 .toList();
     }
 
@@ -680,6 +737,36 @@ public class AuctionService {
      * <p>
      * Checked when the auction starts, while it is still cheap to add a player or a team.
      */
+    /**
+     * Sets team size from who actually turned up: everyone already seated (the captains)
+     * plus everyone queued, split evenly across the teams. With open sign-ups nobody knows
+     * the numbers until now, and a tournament set up with picked players comes out unchanged.
+     */
+    private void fitRosterSizeToPool(Auction auction, Tournament tournament, List<Team> roster) {
+        Map<Long, Integer> rosterCounts = mapper.rosterCounts(tournament.getId());
+        int seated = roster.stream().mapToInt(team -> rosterCounts.getOrDefault(team.getId(), 0)).sum();
+        int waiting = remainingLots(auction.getId()).size();
+        if (waiting == 0) {
+            throw new BadRequestException("Nobody is in the queue yet.");
+        }
+        int people = seated + waiting;
+        if (people % roster.size() != 0) {
+            int over = people % roster.size();
+            throw new BadRequestException(
+                    "%d player(s) and %d captain(s) don't split evenly across %d teams. Queue %d more or remove %d."
+                            .formatted(waiting, seated, roster.size(), roster.size() - over, over));
+        }
+        int size = people / roster.size();
+        if (size > 10) {
+            throw new BadRequestException(
+                    "That makes teams of %d. Teams can have at most 10 people, so add a team or remove players."
+                            .formatted(size));
+        }
+        // Any team already over the size (only possible from manual edits) is caught by the slot check.
+        tournament.setRosterSize(size);
+        tournaments.saveAndFlush(tournament);
+    }
+
     private void requireSlotsMatchPool(Auction auction, Tournament tournament, List<Team> roster) {
         // Unsold players are still waiting for a slot, so they count towards the pool.
         int waiting = remainingLots(auction.getId()).size();

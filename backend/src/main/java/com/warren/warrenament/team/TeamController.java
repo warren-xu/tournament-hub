@@ -61,7 +61,9 @@ public class TeamController {
         return service.assignCaptain(teamId, request.captainUserId());
     }
 
+    /** Admins only. Before the draft starts; the captain's seat goes with the team. */
     @DeleteMapping("/teams/{teamId}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable Long teamId,
                                        @AuthenticationPrincipal AppUser user) {
         service.delete(teamId, user.userId(), user.isAdmin());

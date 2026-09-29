@@ -1,5 +1,6 @@
 package com.warren.warrenament.team;
 
+import com.warren.warrenament.auction.AuctionService;
 import com.warren.warrenament.auth.UserRepository;
 import com.warren.warrenament.common.Exceptions.BadRequestException;
 import com.warren.warrenament.common.Exceptions.ForbiddenException;
@@ -7,6 +8,8 @@ import com.warren.warrenament.common.Exceptions.NotFoundException;
 import com.warren.warrenament.team.TeamDtos.CreateTeamRequest;
 import com.warren.warrenament.team.TeamDtos.TeamView;
 import com.warren.warrenament.team.TeamDtos.UpdateTeamRequest;
+import com.warren.warrenament.profile.PlayerProfileRepository;
+import com.warren.warrenament.tournament.RegistrationRepository;
 import com.warren.warrenament.tournament.Tournament;
 import com.warren.warrenament.tournament.TournamentRepository;
 import org.springframework.stereotype.Service;
@@ -22,15 +25,24 @@ public class TeamService {
     private final TeamMemberRepository members;
     private final TournamentRepository tournaments;
     private final UserRepository users;
+    private final PlayerProfileRepository profiles;
+    private final RegistrationRepository registrations;
+    private final AuctionService auctions;
 
     public TeamService(TeamRepository teams,
                        TeamMemberRepository members,
                        TournamentRepository tournaments,
-                       UserRepository users) {
+                       UserRepository users,
+                       PlayerProfileRepository profiles,
+                       RegistrationRepository registrations,
+                       AuctionService auctions) {
         this.teams = teams;
         this.members = members;
         this.tournaments = tournaments;
         this.users = users;
+        this.profiles = profiles;
+        this.registrations = registrations;
+        this.auctions = auctions;
     }
 
     @Transactional(readOnly = true)
@@ -62,8 +74,21 @@ public class TeamService {
             throw new BadRequestException("That captain already has a team in this tournament");
         }
 
-        Team team = new Team(tournament, request.name(), request.logoUrl(), captainUserId);
-        return TeamView.of(teams.save(team), List.of());
+        auctions.requireNotStarted(tournamentId);
+
+        Team team = teams.save(new Team(tournament, request.name(), request.logoUrl(), captainUserId));
+        // Captains lead their own team rather than being drafted, as when a tournament is
+        // created with picked captains: seat them and take them out of the pool.
+        profiles.findByUserId(captainUserId).ifPresent(captain -> {
+            if (members.existsByTournamentIdAndPlayerProfileId(tournamentId, captain.getId())) {
+                throw new BadRequestException(captain.getUser().getUsername() + " is already on a team here");
+            }
+            members.save(new TeamMember(team, captain, 0));
+            auctions.dequeue(tournamentId, captain.getId());
+            registrations.findByTournamentIdAndPlayerProfileId(tournamentId, captain.getId())
+                    .ifPresent(registrations::delete);
+        });
+        return TeamView.of(team, members.findByTeamId(team.getId()));
     }
 
     @Transactional
@@ -95,9 +120,13 @@ public class TeamService {
     public void delete(Long teamId, Long callerUserId, boolean callerIsAdmin) {
         Team team = require(teamId);
         requireCaptainOrAdmin(team, callerUserId, callerIsAdmin);
-        if (!members.findByTeamId(teamId).isEmpty()) {
+        auctions.requireNotStarted(team.getTournament().getId());
+        List<TeamMember> roster = members.findByTeamId(teamId);
+        // The captain's own seat goes with the team; anyone drafted onto it blocks the delete.
+        if (roster.stream().anyMatch(m -> !m.getPlayerProfile().getUser().getId().equals(team.getCaptainUserId()))) {
             throw new BadRequestException("Cannot delete a team that already has players drafted");
         }
+        members.deleteAll(roster);
         teams.delete(team);
     }
 

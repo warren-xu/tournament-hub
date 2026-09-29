@@ -74,8 +74,7 @@ export default async function DraftPage(props: PageProps<"/t/[slug]/draft">) {
         <div className="text-right">
           <Eyebrow>Rules</Eyebrow>
           <p className="tabular mt-1 text-sm text-muted">
-            {tournament.creditBudget} credits · {tournament.rosterSize} per roster ·
-            min bid {tournament.minBid}
+            {tournament.creditBudget} credits · {tournament.rosterSize} per roster
           </p>
         </div>
       </div>

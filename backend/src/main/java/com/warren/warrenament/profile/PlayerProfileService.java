@@ -96,7 +96,6 @@ public class PlayerProfileService {
         profile.setMainAgent(mainAgent);
         profile.setRiotId(request.riotId());
         profile.setCurrentRank(request.currentRank());
-        profile.setPeakRank(request.peakRank());
         profile.setPrimaryRole(request.primaryRole());
         profile.setSecondaryRole(request.secondaryRole());
         profile.setBio(request.bio());
@@ -106,6 +105,15 @@ public class PlayerProfileService {
         profile.setUpdatedAt(Instant.now());
 
         return ProfileView.of(profiles.save(profile));
+    }
+
+    /** Peak rank comes from Riot's data via the import, never from the profile form. */
+    @Transactional
+    public void setPeakRank(Long userId, String peakRank) {
+        profiles.findByUserId(userId).ifPresent(profile -> {
+            profile.setPeakRank(peakRank);
+            profiles.save(profile);
+        });
     }
 
     /**

@@ -70,13 +70,6 @@ public class AuctionController {
         return auctions.createForTournament(tournamentId);
     }
 
-    @PostMapping("/{auctionId}/queue")
-    @PreAuthorize("hasRole('ADMIN')")
-    public AuctionSnapshot buildQueue(@PathVariable Long auctionId,
-                                      @RequestParam(defaultValue = "true") boolean shuffle) {
-        return auctions.buildQueue(auctionId, shuffle);
-    }
-
     @PostMapping("/{auctionId}/start")
     @PreAuthorize("hasRole('ADMIN')")
     public AuctionSnapshot start(@PathVariable Long auctionId) {

@@ -113,15 +113,19 @@ The frontend deploys separately with `npx vercel --prod` from `frontend/`.
 |---|---|---|
 | `GET` | `/api/me` | anyone (204 when signed out) |
 | `GET PUT` | `/api/profiles/me` | signed in |
-| `POST` | `/api/profiles/me/import` | signed in — suggests fields from a Riot ID's recent competitive games via HenrikDev; saves nothing |
+| `POST` | `/api/profiles/me/import` | signed in — suggests fields from a Riot ID's recent competitive games via HenrikDev; saves only peak rank, which `PUT /me` never sets |
 | `DELETE` | `/api/profiles/{id}` | admin — hard delete, for clearing test players |
 | `GET` | `/api/profiles`, `/api/profiles/{id}` | anyone |
 | `POST` | `/api/tournaments` | admin |
 | `PUT` | `/api/tournaments/{id}/status` | admin |
-| `POST` | `/api/tournaments/{id}/registrations` | signed in (self) |
-| `PUT` | `/api/tournaments/registrations/{id}?status=` | admin |
+| `PUT` | `/api/tournaments/{id}/schedule` | admin — `{startsAt}` (ISO, or `null` for TBA) |
+| `POST` | `/api/tournaments/{id}/registrations` | signed in (self) — approved on the spot and queued |
+| `DELETE` | `/api/tournaments/{id}/registrations/me` | signed in (self) — leave the queue, before the draft starts |
+| `POST` | `/api/tournaments/{id}/queue` | admin — add `{playerProfileIds}` to the queue |
+| `DELETE` | `/api/tournaments/{id}/queue/{profileId}` | admin — take a player back out of the queue |
 | `GET POST` | `/api/tournaments/{id}/teams` | anyone / signed in |
-| `PUT DELETE` | `/api/teams/{id}` | that team's captain, or admin |
+| `PUT` | `/api/teams/{id}` | that team's captain, or admin — rename |
+| `DELETE` | `/api/teams/{id}` | admin — before the draft starts; the captain's seat goes with it |
 | `GET` | `/api/agents` | anyone — the picker roster (`?includeRetired=true` for all) |
 | `GET` | `/api/ranks` | anyone — competitive tiers (`?includeHidden=true` for all) |
 | `GET` | `/api/player-cards` | anyone — saved player-card catalog |
@@ -193,16 +197,16 @@ Override the sources with `app.agents.source-url` and `app.ranks.source-url`.
 
 Everything else here is CRUD. These are the parts that cost you a live event if they're wrong.
 
-**Budget ceiling.** A captain with 100 credits and 5 roster slots cannot bid 100 on one
-player and leave four slots unfillable, so every still-open slot after this one keeps
-`minBid` in reserve:
+**Budget and bids.** Bids are sealed. A captain may bid anything from `minBid` (1 by
+default) up to everything their team has left; nothing is held back for later slots, and a
+captain who spends it all just gets whoever is left when the leftovers are dealt out.
+`TeamView.maxBid` ships the ceiling so the UI can disable illegal bids; the server enforces
+it regardless. Not bidding is how a captain passes. A lot nobody bids on goes unsold and back to
+the end of the queue.
 
-```
-maxBid = remainingCredits - (openSlots - 1) * minBid
-```
-
-`TeamView.maxBid` ships this to the client so the UI can disable illegal bids rather than
-let a captain slam a button that will be rejected. The server enforces it regardless.
+A team is only waited on before an early reveal while it has a free slot and can afford
+the floor (`BudgetRules.canBid`). Once no team can, the remaining players are dealt out at
+random.
 
 **Concurrency.** Two captains clicking in the same millisecond is the normal case, not the
 edge case. `BidService.placeBid` locks the lot row (`PESSIMISTIC_WRITE`) for the whole
@@ -261,3 +265,30 @@ The profile picker searches the saved catalog and renders 24 thumbnails per page
 clears affected profile selections (falling back to agent artwork), and drops the
 unused wide-art column. Future syncs skip entries without portrait artwork. Existing
 portrait cards keep their IDs and selections, even if a later source omits artwork.
+
+### Draft pool, queue and start times
+
+The draft pool is everyone in the auction queue: a player joins it by signing up
+(`POST .../registrations`, needs a current rank), or an admin adds chosen players by hand
+(`POST .../queue`). The tournament page shows players the sign-ups
+and shows admins every profile, so they can pick who to add. An `APPROVED` registration marks a
+player as queued and always has a matching lot; removing either removes both. The queue can
+change any number of times until the draft starts, then it's locked along with the teams.
+
+The queue always runs highest rank first (by the ranks catalog's tier; no rank sorts last),
+then by who joined first. It's sorted whenever it's read rather than stored in order, so a
+queued player who edits their rank moves with it, and "nominate next" follows the same order
+(players who drew no bids go after everyone not yet nominated).
+
+`POST /api/tournaments` takes the captains (at least two) and nothing else about players:
+it creates a team per captain with them seated (price 0), opens sign-ups (`REGISTRATION`)
+and creates the auction with an empty queue. Adding a team later from the tournament page
+seats its captain the same way and takes them out of the queue.
+
+Team size is set when the draft first starts: captains plus queued players, split evenly
+across the teams (at most 10 per team). If they don't divide evenly, start is refused with
+how many to add or remove.
+
+`V17` adds a nullable `starts_at` to tournaments (null means "to be announced"). The
+frontend serves it as add-to-calendar links: a Google Calendar template link and an .ics
+file at `/t/{slug}/calendar.ics`, both covering three hours from the start.

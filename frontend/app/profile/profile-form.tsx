@@ -4,7 +4,7 @@ import Image from "next/image";
 import { PlayerCardPicker } from "@/components/player-card-picker";
 import { PlayerCard } from "@/components/player-card";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { buttonClass } from "@/components/ui";
 import { api, ApiCallError } from "@/lib/client-api";
 import type { AgentView, ProfileImport, ProfileView, RankView, PlayerCardView } from "@/lib/types";
@@ -16,6 +16,39 @@ import {
 } from "@/lib/valorant";
 
 type Status = { kind: "idle" | "saving" | "saved" | "error"; message?: string };
+
+/** Everything the form saves, for telling whether anything has changed since the last save. */
+type Values = {
+  riotId: string;
+  currentRank: string;
+  primaryRole: string;
+  secondaryRole: string;
+  bio: string;
+  agents: string[];
+  mainAgent: string;
+  playerCard: PlayerCardView | null;
+};
+
+function valuesOf(profile: ProfileView | null): Values {
+  return {
+    riotId: profile?.riotId ?? "",
+    currentRank: profile?.currentRank ?? "",
+    primaryRole: profile?.primaryRole ?? "",
+    secondaryRole: profile?.secondaryRole ?? "",
+    bio: profile?.bio ?? "",
+    agents: profile?.agents ?? [],
+    mainAgent: profile?.mainAgent ?? "",
+    playerCard: profile?.playerCard ?? null,
+  };
+}
+
+/** The agent pool is a set: ticking an agent off and on again isn't a change. */
+function sameValues(a: Values, b: Values): boolean {
+  const pool = (v: Values) => [...v.agents].sort().join("|");
+  return a.riotId === b.riotId && a.currentRank === b.currentRank
+    && a.primaryRole === b.primaryRole && a.secondaryRole === b.secondaryRole && a.bio === b.bio
+    && pool(a) === pool(b) && a.mainAgent === b.mainAgent && a.playerCard?.id === b.playerCard?.id;
+}
 
 export function ProfileForm({
   username,
@@ -33,6 +66,7 @@ export function ProfileForm({
   const router = useRouter();
   const [riotId, setRiotId] = useState(initial?.riotId ?? "");
   const [currentRank, setCurrentRank] = useState(initial?.currentRank ?? "");
+  // Read-only: set only from Riot's data by the import, which saves it straight away.
   const [peakRank, setPeakRank] = useState(initial?.peakRank ?? "");
   const [primaryRole, setPrimaryRole] = useState(initial?.primaryRole ?? "");
   const [secondaryRole, setSecondaryRole] = useState(initial?.secondaryRole ?? "");
@@ -41,6 +75,31 @@ export function ProfileForm({
   const [mainAgent, setMainAgent] = useState(initial?.mainAgent ?? "");
   const [playerCard, setPlayerCard] = useState<PlayerCardView | null>(initial?.playerCard ?? null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  // What was last saved: the save bar shows whenever the form differs from it.
+  const [saved, setSaved] = useState<Values>(() => valuesOf(initial));
+  const values: Values = { riotId, currentRank, primaryRole, secondaryRole, bio, agents: selected, mainAgent, playerCard };
+  const dirty = !sameValues(values, saved);
+
+  // Leaving with unsaved changes asks first, as the bar is easy to miss on the way out.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  function reset() {
+    setRiotId(saved.riotId);
+    setCurrentRank(saved.currentRank);
+    setPrimaryRole(saved.primaryRole);
+    setSecondaryRole(saved.secondaryRole);
+    setBio(saved.bio);
+    setSelected(saved.agents);
+    setMainAgent(saved.mainAgent);
+    setPlayerCard(saved.playerCard);
+    setStatus({ kind: "idle" });
+    setImporting({ kind: "idle" });
+  }
   const [importing, setImporting] = useState<Status>({ kind: "idle" });
 
   const byRole = groupByRole(agents);
@@ -58,7 +117,10 @@ export function ProfileForm({
     );
   }
 
-  /** Fills the form from the Riot ID's recent games. Nothing is saved until "Save card". */
+  /**
+   * Fills the form from the Riot ID's recent games. Nothing is saved until "Save changes",
+   * except peak rank: the server saves that on the spot, as it's the one field only Riot sets.
+   */
   async function importFromRiotId() {
     if (!riotId.trim()) return;
     setImporting({ kind: "saving" });
@@ -82,8 +144,8 @@ export function ProfileForm({
       setImporting({
         kind: "saved",
         message: n === 0
-          ? "No recent competitive matches found, so your agents and roles are still up to you. Check the rest, then save your card."
-          : `Filled in from ${n} recent competitive ${n === 1 ? "match" : "matches"}. Check it over, then save your card.`,
+          ? "No recent competitive matches found, so your agents and roles are still up to you. Check the rest, then save your changes."
+          : `Filled in from ${n} recent competitive ${n === 1 ? "match" : "matches"}. Check it over, then save your changes.`,
       });
     } catch (err) {
       setImporting({
@@ -95,6 +157,8 @@ export function ProfileForm({
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
+    if (!dirty || status.kind === "saving") return;
+    const saving = values;
     setStatus({ kind: "saving" });
     try {
       await api<ProfileView>("/api/profiles/me", {
@@ -102,7 +166,6 @@ export function ProfileForm({
         json: {
           riotId: riotId.trim() || null,
           currentRank: currentRank || null,
-          peakRank: peakRank || null,
           primaryRole: primaryRole || null,
           secondaryRole: secondaryRole || null,
           bio: bio.trim() || null,
@@ -111,6 +174,7 @@ export function ProfileForm({
           playerCardId: playerCard?.id ?? null,
         },
       });
+      setSaved(saving);
       setStatus({ kind: "saved" });
       router.refresh();
     } catch (err) {
@@ -188,14 +252,19 @@ export function ProfileForm({
               groups={byDivision}
             />
           </Field>
-          <Field label="Peak rank">
-            <RankSelect
-              value={peakRank}
-              onChange={setPeakRank}
-              ranks={ranks}
-              groups={byDivision}
-            />
-          </Field>
+          {/* Not a Field: there's no control to label, just the value Riot reports. */}
+          <div>
+            <span className="flex items-baseline justify-between">
+              <span className="eyebrow">Peak rank</span>
+              <span className="text-xs text-dim">From Riot</span>
+            </span>
+            <div className="mt-2">
+              <RankReadout name={peakRank} ranks={ranks} />
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              Can&rsquo;t be edited. It comes from your Riot ID&rsquo;s rank history and updates when you use Auto-fill.
+            </p>
+          </div>
           <Field label="Primary role">
             <Select value={primaryRole} onChange={setPrimaryRole} options={roleOptions} />
           </Field>
@@ -302,25 +371,27 @@ export function ProfileForm({
           setStatus({ kind: "idle" });
         }} />
 
-        <div className="flex items-center gap-4 border-t border-line-soft pt-6">
-          <button
-            type="submit"
-            disabled={status.kind === "saving"}
-            className={buttonClass("primary")}
-          >
-            {status.kind === "saving" ? "Saving…" : "Save card"}
-          </button>
-
-          <p aria-live="polite" className="text-sm">
-            {status.kind === "saved" ? (
-              <span className="text-muted">Saved.</span>
-            ) : null}
-            {status.kind === "error" ? (
-              <span className="text-signal">{status.message}</span>
-            ) : null}
-          </p>
-        </div>
       </div>
+
+      {/* Floats near the bottom of the window while there are unsaved changes, so saving
+          never means scrolling back down. It sits inside the form, so Enter still saves. */}
+      {dirty ? (
+        <div role="region" aria-label="Unsaved changes" className="save-bar">
+          <p aria-live="polite" className="min-w-0 text-sm">
+            {status.kind === "error"
+              ? <span className="text-signal">{status.message}</span>
+              : <span className="text-bone">You have unsaved changes.</span>}
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" onClick={reset} disabled={status.kind === "saving"} className={buttonClass("ghost")}>
+              Reset
+            </button>
+            <button type="submit" disabled={status.kind === "saving"} className={buttonClass("primary")}>
+              {status.kind === "saving" ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }
@@ -377,6 +448,25 @@ function Select({
         </option>
       ))}
     </select>
+  );
+}
+
+/** A rank shown the same way RankSelect shows one, with nothing to change. */
+function RankReadout({ name, ranks }: { name: string; ranks: RankView[] }) {
+  const rank = ranks.find((r) => r.name === name);
+  return (
+    <span className="flex items-center gap-2">
+      <span
+        aria-hidden
+        className="grid size-10 shrink-0 place-items-center border border-line bg-ink"
+        style={rank?.color ? { borderColor: rankColor(rank.color) } : undefined}
+      >
+        {rank?.iconUrl ? <Image src={rank.iconUrl} alt="" width={28} height={28} unoptimized className="size-7" /> : null}
+      </span>
+      <span className={`flex min-h-10 flex-1 items-center border border-line-soft px-3 text-sm ${name ? "text-bone" : "text-dim"}`}>
+        {name || "Not set yet"}
+      </span>
+    </span>
   );
 }
 

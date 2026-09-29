@@ -49,6 +49,10 @@ public class Tournament {
     @Column(name = "created_by_user_id")
     private Long createdByUserId;
 
+    /** When the event starts; null until an admin announces a date. */
+    @Column(name = "starts_at")
+    private Instant startsAt;
+
     @Column(name = "created_at", nullable = false, updatable = false, insertable = false)
     private Instant createdAt;
 }

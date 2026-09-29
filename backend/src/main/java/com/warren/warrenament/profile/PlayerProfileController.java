@@ -48,10 +48,19 @@ public class PlayerProfileController {
         return service.updateMine(user.userId(), request);
     }
 
-    /** Suggests field values from a Riot ID's recent competitive games. Saves nothing. */
+    /**
+     * Suggests field values from a Riot ID's recent competitive games. Everything is left for
+     * the player to review and save, except peak rank: that is only ever set from Riot's
+     * data, so it's saved here and can't be edited in the profile form.
+     */
     @PostMapping("/me/import")
-    public ImportView importFromRiotId(@Valid @RequestBody ImportRequest request) {
-        return importer.importFromRiotId(request);
+    public ImportView importFromRiotId(@AuthenticationPrincipal AppUser user,
+                                       @Valid @RequestBody ImportRequest request) {
+        ImportView result = importer.importFromRiotId(request);
+        if (result.peakRank() != null) {
+            service.setPeakRank(user.userId(), result.peakRank());
+        }
+        return result;
     }
 
     @GetMapping("/{id}")

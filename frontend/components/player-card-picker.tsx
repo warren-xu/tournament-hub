@@ -23,7 +23,7 @@ export function PlayerCardPicker({ cards, selected, onChange }: {
     <fieldset className="min-w-0">
       <legend className="eyebrow">Player card artwork</legend>
       <div className="mt-3 flex items-center justify-between gap-3">
-        <p aria-live="polite" className="text-sm text-muted">{selected?.name ?? "Using main-agent artwork"}</p>
+        <p aria-live="polite" className="text-sm text-muted">{selected?.name ?? "Using discord avatar"}</p>
         {selected ? <button type="button" onClick={() => onChange(null)} className={buttonClass("ghost", "shrink-0")}>Reset</button> : null}
       </div>
       {cards.length === 0 ? (
