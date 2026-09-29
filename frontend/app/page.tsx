@@ -25,8 +25,10 @@ export default async function HomePage() {
   ]);
   const mine = me ? await getMyProfile() : null;
 
-  // The signed-in player always leads, so they're in the first block even when the arena is collapsed.
-  const list = [...(profiles ?? [])].sort((a, b) => Number(b.id === mine?.id) - Number(a.id === mine?.id));
+  // The signed-in player always leads, so they're in the first block even when the arena is collapsed;
+  // everyone else is newest first (ids are sequential, so a higher id is a more recent sign-up).
+  const list = [...(profiles ?? [])].sort((a, b) =>
+    Number(b.id === mine?.id) - Number(a.id === mine?.id) || b.id - a.id);
   const isAdmin = me?.role === "ADMIN";
   // Signed-out visitors land on /profile, which asks them to sign in first.
   const invite = online && !hasFilledIn(mine)
