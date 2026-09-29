@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.Positive;
 import com.warren.warrenament.playercard.PlayerCardView;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -27,7 +28,8 @@ public final class PlayerProfileDtos {
             PlayerCardView playerCard,
             String peakRank,
             String bannerUrl,
-            Integer accentColor
+            Integer accentColor,
+            Instant updatedAt
     ) {
         public static ProfileView of(PlayerProfile p) {
             return new ProfileView(
@@ -45,7 +47,8 @@ public final class PlayerProfileDtos {
                     p.getPlayerCard() == null ? null : PlayerCardView.of(p.getPlayerCard()),
                     p.getPeakRank(),
                     p.getUser().getBannerUrl(),
-                    p.getUser().getAccentColor());
+                    p.getUser().getAccentColor(),
+                    p.getUpdatedAt());
         }
     }
 

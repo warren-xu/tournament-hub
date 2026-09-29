@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import com.warren.warrenament.playercard.PlayerCardRepository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 
@@ -102,6 +103,7 @@ public class PlayerProfileService {
         profile.setAgents(request.agents() == null
                 ? new LinkedHashSet<>()
                 : new LinkedHashSet<>(request.agents()));
+        profile.setUpdatedAt(Instant.now());
 
         return ProfileView.of(profiles.save(profile));
     }

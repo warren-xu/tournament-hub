@@ -81,6 +81,8 @@ export interface ProfileView {
   bannerUrl: string | null;
   /** Discord accent colour as 0xRRGGBB: the stats background when there's no banner. */
   accentColor: number | null;
+  /** ISO timestamp of the last profile save (or creation). */
+  updatedAt: string;
 }
 
 /** Suggested profile values from a Riot ID's recent games */

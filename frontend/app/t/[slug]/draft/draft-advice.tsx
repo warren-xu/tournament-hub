@@ -10,13 +10,10 @@ import { CORE_ROLES, rankCandidates, roleCoverage, type DraftPlayer } from "@/li
 import type { AuctionSnapshot, AuctionTeamView, LotView, ProfileView, RankView } from "@/lib/types";
 import type { RoleInfo } from "@/lib/valorant-roles";
 
-/** How many suggestions to show; the rest of the queue is a scroll away in the admin rail. */
-const SHOWN = 5;
-
 /**
  * "Who should I go for?" for one captain: everyone still up for grabs, the player on the
  * block included, ranked for this team by lib/draft-advice. On the captain's nominating
- * turn it lists everyone, each with a button to nominate them.
+ * turn each row also gets a button to nominate them.
  */
 export function DraftAdvice({
   snapshot,
@@ -153,9 +150,9 @@ export function DraftAdvice({
       {advice.length === 0 ? (
         <p className="px-5 py-4 text-sm text-muted">Nobody left to draft.</p>
       ) : (
-        // On your turn you may nominate anyone, so everyone is listed.
-        <ol className={`divide-y divide-line-soft ${myTurn ? "max-h-96 overflow-y-auto" : ""}`}>
-          {(myTurn ? advice : advice.slice(0, SHOWN)).map((a, i) => {
+        // Everyone left is listed, so captains can scout the whole queue between their turns.
+        <ol className="max-h-96 divide-y divide-line-soft overflow-y-auto">
+          {advice.map((a, i) => {
             const onBlock = lot?.status === "OPEN" && lot.player.profileId === a.player.profileId;
             const picked = snapshot.pickedPlayer?.profileId === a.player.profileId;
             return (

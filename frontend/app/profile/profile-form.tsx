@@ -293,7 +293,6 @@ export function ProfileForm({
             value={bio}
             onChange={(e) => setBio(e.target.value.slice(0, 1000))}
             rows={4}
-            placeholder="Availability, comms, what you actually want to play."
             className={`${inputClass} resize-y`}
           />
         </Field>
