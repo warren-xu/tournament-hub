@@ -14,6 +14,8 @@ import type { AgentView, ProfileView, RankView } from "@/lib/types";
 
 /** Which card wears the "Drag me!" bubble. */
 const HINT_INDEX = 0;
+/** Which card wears the "Click me!" bubble: opening a card shows the player's details. */
+const CLICK_HINT_INDEX = 1;
 /** Tile edge in px: desktop, and the cap on phones (where two must fit across). */
 const TILE_SIZE = 123;
 const TILE_SIZE_NARROW = 92;
@@ -43,6 +45,9 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
   const suggestions = useSuggestionsEnabled();
   // On phones a drag only works with touch-drag switched on; otherwise it would mislead.
   const showHint = suggestions === true && !dragged && profiles.length > 0 && (!coarsePointer || touchDrag);
+  /** Once someone has opened a card, the click hint has done its job for this visit. */
+  const [opened, setOpened] = useState(false);
+  const showClickHint = suggestions === true && !opened && profiles.length > CLICK_HINT_INDEX;
   const arena = useRef<HTMLUListElement>(null);
   const slots = useRef<(HTMLLIElement | null)[]>([]);
   const bodies = useRef<PoolBody[]>([]);
@@ -131,7 +136,7 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
       bodies.current.forEach((body, i) => {
         const slot = slots.current[i];
         if (slot) slot.style.transform = `translate3d(${body.x}px, ${body.y}px, 0)`;
-        if (slot && i === HINT_INDEX) slot.dataset.hintBelow = String(body.y < HINT_ROOM);
+        if (slot && (i === HINT_INDEX || i === CLICK_HINT_INDEX)) slot.dataset.hintBelow = String(body.y < HINT_ROOM);
       });
       frame = requestAnimationFrame(tick);
     };
@@ -223,13 +228,16 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
                 onPointerEnter={(event) => { if (event.pointerType === "mouse" && !drag.current) hovered.current = index; }}
                 onPointerLeave={() => { if (hovered.current === index) hovered.current = null; }}
                 onFocus={() => { focused.current = index; }} onBlur={() => { focused.current = null; }}
-                onClick={(event) => { if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; return; } openedByPointer.current = event.detail !== 0; setSelected(p); }}>
+                onClick={(event) => { if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; return; } openedByPointer.current = event.detail !== 0; setOpened(true); setSelected(p); }}>
                 <RankPortrait rank={p.currentRank} agent={agent} art={p.playerCard?.largeArt} avatarUrl={p.avatarUrl} name={p.mainAgent || p.username} />
                 <span className="pool-tile-identity">
                   <strong>{p.username}</strong>
                 </span>
               </button>
               {showHint && index === HINT_INDEX ? <span className="pool-hint" aria-hidden="true">Drag me!</span> : null}
+              {showClickHint && index === CLICK_HINT_INDEX
+                ? <span className="pool-hint" aria-hidden="true">{coarsePointer ? "Tap me!" : "Click me!"}</span>
+                : null}
             </li>
           );
         })}

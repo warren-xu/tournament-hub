@@ -15,12 +15,8 @@ export default async function SignInPage() {
           <span aria-hidden className="block h-px w-10 bg-accent" />
           <Eyebrow>Sign in</Eyebrow>
         </div>
-        <h1 className="mt-4 text-4xl uppercase leading-none tracking-tight">
-          Identify yourself
-        </h1>
         <p className="mt-4 text-sm leading-relaxed text-muted">
-          Warrenament uses Discord so your handle and avatar come along with you,
-          and so captains know exactly who they are bidding against.
+          Warrenament uses Discord so your handle and avatar come along with you!
         </p>
 
         <a

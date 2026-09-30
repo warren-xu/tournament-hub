@@ -59,19 +59,16 @@ export default async function HomePage() {
             <Eyebrow>Valorant tournament hub</Eyebrow>
           </div>
           <h1 className="mt-4 max-w-2xl text-5xl uppercase leading-[0.95] tracking-tight sm:text-6xl">
-            Every pick counts.
+            Auction drafts.
             <br />
-            <span className="text-signal">Follow the draft.</span>
+            <span className="text-signal">Follow the picks.</span>
           </h1>
           <p className="mt-6 max-w-lg text-base leading-relaxed text-muted">
-            Watch teams take shape, explore the players, and follow every reveal.
-            Ready to compete? Create your profile and join an open tournament.
+            Watch teams take shape, explore the player pool, and follow every bidding battle.
+            Ready to compete? Create your profile and sign up!
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <LinkButton href="#tournaments" tone="primary">
-              Explore tournaments
-            </LinkButton>
-            <LinkButton href="/profile">Customize your profile</LinkButton>
+            <LinkButton href="/profile" tone="primary">Customize your profile</LinkButton>
           </div>
         </div>
 
