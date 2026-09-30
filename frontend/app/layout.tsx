@@ -17,7 +17,7 @@ const body = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Warrenament — Valorant tournament hub",
+  title: "Warrenament Hub",
   description:
     "Player profiles, team rosters and a live auction draft for Valorant tournaments.",
 };
