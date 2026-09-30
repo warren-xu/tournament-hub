@@ -137,7 +137,7 @@ public class PlayerProfileService {
         }
         if (teamMembers.existsByPlayerProfileId(profileId)) {
             throw new BadRequestException(
-                    name + " has already been drafted onto a roster. Undo the sale first.");
+                    name + " has already been drafted onto a roster.");
         }
         if (teams.existsByCaptainUserId(user.getId())) {
             throw new BadRequestException(
@@ -148,7 +148,7 @@ public class PlayerProfileService {
         if (playerLots.stream().anyMatch(lot -> lot.getStatus() == LotStatus.OPEN
                 || lot.getStatus() == LotStatus.SOLD)) {
             throw new BadRequestException(
-                    name + " is in a running auction. Close or undo that lot first.");
+                    name + " is in a running auction. Close that lot first.");
         }
 
         // Queued lots reference the profile and have no bids yet, so they go with it.

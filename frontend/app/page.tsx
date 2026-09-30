@@ -15,11 +15,14 @@ import {
 } from "@/lib/server-api";
 import type { TournamentStatus } from "@/lib/types";
 
-/** Only tournaments whose draft has started get a dot: yellow while it runs, green once done. */
-const DRAFT_DOT: Partial<Record<TournamentStatus, { label: string; color: string }>> = {
-  DRAFTING: { label: "Draft in progress", color: "bg-underway" },
-  LIVE: { label: "Draft complete", color: "bg-done" },
-  COMPLETE: { label: "Draft complete", color: "bg-done" },
+/**
+ * Only tournaments whose draft has started get a marker: a pulsing yellow "Live" while it
+ * runs (the same pulse as "your turn" in the draft room), a green "Completed" once done.
+ */
+const DRAFT_DOT: Partial<Record<TournamentStatus, { label: string; color: string; text: string; live?: boolean }>> = {
+  DRAFTING: { label: "Draft in progress", color: "bg-underway", text: "text-underway", live: true },
+  LIVE: { label: "Completed", color: "bg-done", text: "text-done" },
+  COMPLETE: { label: "Completed", color: "bg-done", text: "text-done" },
 };
 
 const STATUS_COPY: Record<TournamentStatus, string> = {
@@ -90,7 +93,7 @@ export default async function HomePage() {
       </section>
 
       <section id="tournaments" className="scroll-mt-36 pt-10">
-        <SectionHead label="All events" title="Tournaments" />
+        <SectionHead label="All events" title="Drafts" />
 
         {list.length === 0 ? (
           <EmptyState
@@ -110,8 +113,11 @@ export default async function HomePage() {
                   className="group relative flex h-full flex-col items-start gap-5 rounded-sm border border-line bg-panel p-6 transition-colors hover:border-muted hover:bg-raise"
                 >
                   {DRAFT_DOT[t.status] ? (
-                    <span className={`absolute top-4 right-4 size-2.5 rounded-full ${DRAFT_DOT[t.status]!.color}`}
-                      role="img" aria-label={DRAFT_DOT[t.status]!.label} title={DRAFT_DOT[t.status]!.label} />
+                    <span className={`absolute top-4 right-4 flex items-center gap-2 font-display text-xs font-semibold uppercase tracking-wider ${DRAFT_DOT[t.status]!.text}`}>
+                      <span aria-hidden className={`status-dot ${DRAFT_DOT[t.status]!.color}`}
+                        data-live={DRAFT_DOT[t.status]!.live || undefined} />
+                      {DRAFT_DOT[t.status]!.live ? "Live" : DRAFT_DOT[t.status]!.label}
+                    </span>
                   ) : null}
                   <span className="min-w-0">
                     <span className="block font-display text-xl uppercase tracking-wide transition-colors group-hover:text-signal">

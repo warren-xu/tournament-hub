@@ -48,7 +48,7 @@ public class Auction {
     @Column(name = "pick_lot_id")
     private Long pickLotId;
 
-    /** How long a nominated player stays open for sealed bids. */
+    /** How long a nominated player stays open before the first bid; each bid then keeps it open a little longer. */
     @Column(name = "lot_duration_seconds", nullable = false)
     private int lotDurationSeconds = 30;
 

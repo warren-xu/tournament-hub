@@ -45,7 +45,7 @@ public class Lot {
     @Column(nullable = false)
     private LotStatus status = LotStatus.PENDING;
 
-    /** Zero until the reveal: while the lot is open every bid is hidden. */
+    /** The current price while the lot is open (0 before any bid), then what it sold for. */
     @Column(name = "winning_bid", nullable = false)
     private int winningBid;
 
@@ -57,7 +57,7 @@ public class Lot {
 
     /**
      * When this lot was last put up. Bids older than this belong to a previous round - a
-     * player can come back through the queue after an undo - and are ignored by the reveal.
+     * player who went unsold comes back through the queue - and don't count this time.
      */
     @Column(name = "opened_at")
     private Instant openedAt;

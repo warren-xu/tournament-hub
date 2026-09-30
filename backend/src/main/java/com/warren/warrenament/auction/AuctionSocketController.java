@@ -44,7 +44,6 @@ public class AuctionSocketController {
         }
 
         try {
-            // Only a "locked in" notice is broadcast; the amount goes nowhere else.
             bids.submitBid(auctionId, command.lotId(), command.amount(), user.userId());
         } catch (RuntimeException ex) {
             // Rejections are routed back to the one bidder so the room is not spammed.

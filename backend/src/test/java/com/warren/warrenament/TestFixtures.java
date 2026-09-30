@@ -88,12 +88,12 @@ public class TestFixtures {
         return auctions.save(auction);
     }
 
-    /** An already-nominated lot, open for sealed bids for the given duration. */
+    /** An already-open lot nobody holds yet (no nominating team), for the given duration. */
     @Transactional
     public Lot openLot(Auction auction, PlayerProfile player, int secondsRemaining) {
         Lot lot = new Lot(auction, player, lots.maxSeq(auction.getId()) + 1);
         lot.setStatus(LotStatus.OPEN);
-        // Sealed bids are scoped to the round, so an open lot must carry its start time.
+        // Bids are scoped to the round, so an open lot must carry its start time.
         lot.setOpenedAt(Instant.now());
         lot.setEndsAt(Instant.now().plusSeconds(secondsRemaining));
         lot = lots.saveAndFlush(lot);

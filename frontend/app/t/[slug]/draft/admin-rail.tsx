@@ -23,12 +23,6 @@ export function AdminRail({
   const lotOpen = snapshot.currentLot !== null;
   const turnTeam = snapshot.teams.find((t) => t.teamId === snapshot.turnTeamId);
 
-  // The random fill runs by itself as soon as the last credit is spent. The button is
-  // here for the case an undo puts credits back and the draw has to be re-run.
-  const floor = snapshot.currentLot?.minBid ?? 1;
-  const nobodyCanBid =
-    snapshot.teams.length > 0 && snapshot.teams.every((team) => team.maxBid < floor);
-  const slotsLeft = snapshot.teams.some((team) => team.rosterCount < team.rosterSize);
 
   const loadQueue = useCallback(() => {
     api<LotView[]>(`/api/auctions/${auctionId}/queue`)
@@ -67,10 +61,10 @@ export function AdminRail({
 
       <div className="space-y-4 p-5">
         <p className="text-sm leading-relaxed text-muted">
-          {snapshot.status === "COMPLETE" ? "Draft finished. Undo only to fix a pick."
+          {snapshot.status === "COMPLETE" ? "Draft finished."
             : snapshot.status === "SETUP" ? "Start the draft, then nominate a player."
             : snapshot.status === "PAUSED" ? "Paused. Resume to continue."
-            : lotOpen ? "Round open. Results reveal automatically, or close it early."
+            : lotOpen ? "Bidding is open. It closes when the clock runs out, or close it early."
             : snapshot.pickedPlayer ? `${turnTeam?.name ?? "The captain"} nominated ${snapshot.pickedPlayer.username}. Open bidding when you're ready.`
             : turnTeam ? `Waiting for ${turnTeam.name} to pick. You can nominate someone yourself if they're away.`
             : "Nominate the next player."}
@@ -105,15 +99,6 @@ export function AdminRail({
             />
           ) : null}
 
-          {snapshot.status === "LIVE" && !lotOpen && nobodyCanBid && slotsLeft ? (
-            <Control
-              label="Assign rest randomly"
-              disabled={busy !== null}
-              busy={busy === "fill"}
-              onClick={() => run("fill", `/api/auctions/${auctionId}/fill-random`)}
-              primary
-            />
-          ) : null}
 
           {snapshot.status === "LIVE" && !lotOpen ? (
             <Control
@@ -123,13 +108,6 @@ export function AdminRail({
               onClick={() => run("complete", `/api/auctions/${auctionId}/complete`)}
             />
           ) : null}
-
-          <Control
-            label="Undo last sale"
-            disabled={busy !== null}
-            busy={busy === "undo"}
-            onClick={() => run("undo", `/api/auctions/${auctionId}/undo`)}
-          />
 
           {lotOpen ? (
             <Control

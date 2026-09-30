@@ -24,9 +24,7 @@ import org.springframework.context.annotation.Import;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -86,100 +84,156 @@ class AuctionEngineIntegrationTest {
         return new World(tournament, auction, lot, teamList, captains);
     }
 
+    private void expire(Long lotId) {
+        Lot lot = lots.findById(lotId).orElseThrow();
+        lot.setEndsAt(Instant.now().minusSeconds(1));
+        lots.saveAndFlush(lot);
+    }
+
     private int credits(Long teamId) {
         return teams.findById(teamId).orElseThrow().getRemainingCredits();
     }
 
     @Test
-    @DisplayName("the highest sealed bid takes the player at its own price")
-    void highestSealedBidWins() {
+    @DisplayName("the highest bid when the clock runs out takes the player at that price")
+    void highestBidWins() {
         World w = world(3, 100, 5, 60);
 
         bidService.submitBid(w.auctionId(), w.lotId(), 30, w.captain(0));
         bidService.submitBid(w.auctionId(), w.lotId(), 55, w.captain(1));
-        bidService.submitBid(w.auctionId(), w.lotId(), 12, w.captain(2));
+        assertThat(lots.findById(w.lotId()).orElseThrow().getStatus()).isEqualTo(LotStatus.OPEN);
 
-        // Three of three captains locked in, so the reveal has already happened.
+        expire(w.lotId());
+        sweeper.closeExpiredLots();
+
         Lot closed = lots.findById(w.lotId()).orElseThrow();
         assertThat(closed.getStatus()).isEqualTo(LotStatus.SOLD);
         assertThat(closed.getWinningTeamId()).isEqualTo(w.teamId(1));
-
-        // First price: the winner pays exactly what they wrote, not one over the runner-up.
         assertThat(closed.getWinningBid()).isEqualTo(55);
         assertThat(credits(w.teamId(1))).isEqualTo(45);
+        // Being outbid costs nothing.
         assertThat(credits(w.teamId(0))).isEqualTo(100);
-        assertThat(credits(w.teamId(2))).isEqualTo(100);
-
-        List<TeamMember> roster = teamMembers.findByTeamId(w.teamId(1));
-        assertThat(roster).hasSize(1);
-        assertThat(roster.getFirst().getPricePaid()).isEqualTo(55);
+        assertThat(teamMembers.findByTeamId(w.teamId(1))).singleElement()
+                .extracting(TeamMember::getPricePaid).isEqualTo(55);
     }
 
     @Test
-    @DisplayName("nobody can see a bid until the lot closes")
-    void amountsStaySealedWhileTheLotIsOpen() {
+    @DisplayName("the price and the leader are public while bidding is open")
+    void theRoomSeesTheCurrentPrice() {
         World w = world(3, 100, 5, 60);
         bidService.submitBid(w.auctionId(), w.lotId(), 42, w.captain(0));
 
-        AuctionSnapshot asRival = auctionService.snapshot(w.auctionId(), w.captain(1));
-        LotView lot = asRival.currentLot();
-
-        // Who has committed is public; what they committed is not.
-        assertThat(lot.lockedInTeamIds()).containsExactly(w.teamId(0));
-        assertThat(lot.captainsExpected()).isEqualTo(3);
-        assertThat(lot.winningBid()).isZero();
-        assertThat(lot.winningTeamId()).isNull();
-        assertThat(asRival.recentBids()).isEmpty();
-        assertThat(asRival.yourBid()).isNull();
-
-        // A captain does get their own bid back, so a refresh mid-lot is not a black hole.
-        assertThat(auctionService.snapshot(w.auctionId(), w.captain(0)).yourBid()).isEqualTo(42);
-
-        // And the whole board is revealed once it closes.
-        auctionService.closeLot(w.lotId());
-        assertThat(auctionService.snapshot(w.auctionId(), w.captain(1)).recentBids()).isEmpty();
+        AuctionSnapshot snapshot = auctionService.snapshot(w.auctionId());
+        LotView lot = snapshot.currentLot();
+        assertThat(lot.winningBid()).isEqualTo(42);
+        assertThat(lot.winningTeamId()).isEqualTo(w.teamId(0));
+        assertThat(lot.minBid()).isEqualTo(43);
+        assertThat(snapshot.recentBids()).singleElement()
+                .satisfies(bid -> assertThat(bid.amount()).isEqualTo(42));
     }
 
     @Test
-    @DisplayName("a captain may resubmit until the window closes; the last amount counts")
-    void lastSubmissionReplacesTheEarlierOne() {
-        World w = world(3, 100, 5, 60);
+    @DisplayName("every bid has to beat the current price by at least one credit")
+    void bidsMustClimb() {
+        World w = world(2, 100, 5, 60);
+        bidService.submitBid(w.auctionId(), w.lotId(), 10, w.captain(0));
 
-        bidService.submitBid(w.auctionId(), w.lotId(), 90, w.captain(0));
-        bidService.submitBid(w.auctionId(), w.lotId(), 10, w.captain(0));  // changed their mind
-        bidService.submitBid(w.auctionId(), w.lotId(), 20, w.captain(1));
-        bidService.submitBid(w.auctionId(), w.lotId(), 5, w.captain(2));
+        assertThatThrownBy(() -> bidService.submitBid(w.auctionId(), w.lotId(), 10, w.captain(1)))
+                .isInstanceOf(BidRejectedException.class)
+                .hasMessageContaining("Bid at least 11");
+        assertThat(bidService.submitBid(w.auctionId(), w.lotId(), 11, w.captain(1)).amount()).isEqualTo(11);
+    }
 
+    @Test
+    @DisplayName("the team holding the player can't bid against itself")
+    void theLeaderCannotRaiseItself() {
+        World w = world(2, 100, 5, 60);
+        bidService.submitBid(w.auctionId(), w.lotId(), 10, w.captain(0));
+
+        assertThatThrownBy(() -> bidService.submitBid(w.auctionId(), w.lotId(), 20, w.captain(0)))
+                .isInstanceOf(BidRejectedException.class)
+                .hasMessageContaining("already hold");
+
+        // Once outbid, they're free to come back in.
+        bidService.submitBid(w.auctionId(), w.lotId(), 15, w.captain(1));
+        assertThat(bidService.submitBid(w.auctionId(), w.lotId(), 20, w.captain(0)).amount()).isEqualTo(20);
+    }
+
+    @Test
+    @DisplayName("with no bids, the nominating team keeps the player for nothing")
+    void theNominatorKeepsAnUncontestedPlayer() {
+        Tournament tournament = fixtures.tournament(100, 5, 1);
+        Auction auction = fixtures.liveAuction(tournament, 30);
+        Team nominator = fixtures.team(tournament, "Nominator", fixtures.user("nominator"));
+        fixtures.team(tournament, "Rival", fixtures.user("rival"));
+        PlayerProfile player = fixtures.profile("quiet-pick");
+        fixtures.queuedLot(auction, player);
+        auction.setTurnTeamId(nominator.getId());
+        auctions.saveAndFlush(auction);
+
+        LotView opened = auctionService.nominate(auction.getId(), player.getId()).currentLot();
+        // Held by the nominator at 0 from the moment it opens.
+        assertThat(opened.winningTeamId()).isEqualTo(nominator.getId());
+        assertThat(opened.winningBid()).isZero();
+        assertThat(opened.minBid()).isEqualTo(1);
+
+        expire(opened.lotId());
+        sweeper.closeExpiredLots();
+
+        assertThat(lots.findById(opened.lotId()).orElseThrow().getStatus()).isEqualTo(LotStatus.SOLD);
+        assertThat(teamMembers.findByTeamId(nominator.getId())).singleElement()
+                .extracting(TeamMember::getPricePaid).isEqualTo(0);
+        assertThat(credits(nominator.getId())).isEqualTo(100);
+    }
+
+    @Test
+    @DisplayName("a bid restarts a short countdown but never shortens the clock")
+    void aBidBuysTheRoomTimeToAnswer() {
+        World closing = world(2, 100, 5, 3);
+        bidService.submitBid(closing.auctionId(), closing.lotId(), 5, closing.captain(0));
+        assertThat(lots.findById(closing.lotId()).orElseThrow().getEndsAt())
+                .isAfter(Instant.now().plusSeconds(BidService.BID_RESET_SECONDS - 2));
+
+        World early = world(2, 100, 5, 60);
+        bidService.submitBid(early.auctionId(), early.lotId(), 5, early.captain(0));
+        assertThat(lots.findById(early.lotId()).orElseThrow().getEndsAt())
+                .isAfter(Instant.now().plusSeconds(50));
+    }
+
+    @Test
+    @DisplayName("the lot closes at once when nobody else could outbid")
+    void anUnbeatableBidSettlesImmediately() {
+        World w = world(2, 100, 5, 60);
+        Team rival = teams.findById(w.teamId(1)).orElseThrow();
+        rival.setRemainingCredits(10);
+        teams.saveAndFlush(rival);
+
+        bidService.submitBid(w.auctionId(), w.lotId(), 10, w.captain(0));
+
+        // The rival would need 11 and holds 10: no point running the clock out.
         Lot closed = lots.findById(w.lotId()).orElseThrow();
-        assertThat(closed.getWinningTeamId()).isEqualTo(w.teamId(1));
-        assertThat(closed.getWinningBid()).isEqualTo(20);
-        assertThat(credits(w.teamId(0))).isEqualTo(100);
-
-        // The withdrawn 90 is still in the audit trail, just not in the reveal.
-        assertThat(bids.findByLotIdOrderByIdAsc(w.lotId())).hasSize(4);
+        assertThat(closed.getStatus()).isEqualTo(LotStatus.SOLD);
+        assertThat(closed.getWinningTeamId()).isEqualTo(w.teamId(0));
     }
 
     @Test
-    @DisplayName("tied top bids are settled by a coin flip, not by who bid first")
-    void tiesGoToARandomCaptain() {
-        Set<Long> winners = new HashSet<>();
+    @DisplayName("once nobody else can bid, a nominated player goes straight to the nominator")
+    void aNominationNobodyCanContestSettlesAtZero() {
+        Tournament tournament = fixtures.tournament(100, 5, 1);
+        Auction auction = fixtures.liveAuction(tournament, 30);
+        Team nominator = fixtures.team(tournament, "Nominator", fixtures.user("last-nominator"));
+        Team broke = fixtures.team(tournament, "Broke", fixtures.user("broke"));
+        broke.setRemainingCredits(0);
+        teams.saveAndFlush(broke);
+        PlayerProfile player = fixtures.profile("free-pick");
+        fixtures.queuedLot(auction, player);
+        auction.setTurnTeamId(nominator.getId());
+        auctions.saveAndFlush(auction);
 
-        // A fair coin lands the same way 40 times running with probability 2^-39. If this
-        // ever flakes, the tie-break has stopped being random.
-        for (int round = 0; round < 40 && winners.size() < 2; round++) {
-            World w = world(2, 100, 5, 60);
-            bidService.submitBid(w.auctionId(), w.lotId(), 25, w.captain(0));
-            bidService.submitBid(w.auctionId(), w.lotId(), 25, w.captain(1));
+        auctionService.nominate(auction.getId(), player.getId());
 
-            Lot closed = lots.findById(w.lotId()).orElseThrow();
-            assertThat(closed.getStatus()).isEqualTo(LotStatus.SOLD);
-            assertThat(closed.getWinningBid()).isEqualTo(25);
-            // Whoever won paid; the other kept everything.
-            assertThat(credits(closed.getWinningTeamId())).isEqualTo(75);
-            winners.add(closed.getWinningTeamId().equals(w.teamId(0)) ? 0L : 1L);
-        }
-
-        assertThat(winners).containsExactlyInAnyOrder(0L, 1L);
+        assertThat(teamMembers.findByTeamId(nominator.getId())).singleElement()
+                .extracting(TeamMember::getPricePaid).isEqualTo(0);
     }
 
     @Test
@@ -187,79 +241,65 @@ class AuctionEngineIntegrationTest {
     void theWholeBudgetIsBiddable() {
         World w = world(2, 100, 5, 60);
 
-        assertThat(bidService.submitBid(w.auctionId(), w.lotId(), 100, w.captain(0)).amount())
-                .isEqualTo(100);
         assertThatThrownBy(() -> bidService.submitBid(w.auctionId(), w.lotId(), 101, w.captain(1)))
                 .isInstanceOf(BidRejectedException.class)
                 .hasMessageContaining("only have 100 credits");
+        assertThat(bidService.submitBid(w.auctionId(), w.lotId(), 100, w.captain(0)).amount())
+                .isEqualTo(100);
     }
 
     @Test
-    @DisplayName("the reveal waits for the clock when a captain who could bid has not")
-    void aSilentCaptainKeepsTheLotOpen() {
-        World w = world(3, 100, 5, 60);
+    @DisplayName("racing bids are applied one at a time, each beating the last")
+    void concurrentBidsClimbInOrder() throws Exception {
+        World w = world(4, 100, 5, 60);
 
-        bidService.submitBid(w.auctionId(), w.lotId(), 10, w.captain(0));
-        bidService.submitBid(w.auctionId(), w.lotId(), 20, w.captain(1));
-
-        assertThat(lots.findById(w.lotId()).orElseThrow().getStatus()).isEqualTo(LotStatus.OPEN);
-
-        // Teams with no credits are not waited on, so the count that matters is who *can* bid.
-        Team broke = teams.findById(w.teamId(2)).orElseThrow();
-        broke.setRemainingCredits(0);
-        teams.saveAndFlush(broke);
-
-        bidService.submitBid(w.auctionId(), w.lotId(), 11, w.captain(0));
-        assertThat(lots.findById(w.lotId()).orElseThrow().getStatus()).isEqualTo(LotStatus.SOLD);
-    }
-
-    @Test
-    @DisplayName("once every captain is broke the rest of the pool is dealt out at random")
-    void randomFillDealsOutTheRemainderForFree() {
-        Tournament tournament = fixtures.tournament(10, 2, 1);
-        Auction auction = fixtures.liveAuction(tournament, 30);
-        User a = fixtures.user("spender");
-        User b = fixtures.user("saver");
-        Team teamA = fixtures.team(tournament, "A", a);
-        Team teamB = fixtures.team(tournament, "B", b);
-
-        List<Lot> queued = new ArrayList<>();
-        for (int i = 0; i < 3; i++) {
-            queued.add(fixtures.queuedLot(auction, fixtures.profile("waiting" + i)));
+        List<int[]> attempts = new ArrayList<>();
+        for (int captain = 0; captain < 4; captain++) {
+            for (int amount = 1; amount <= 5; amount++) {
+                attempts.add(new int[]{captain, amount * 3 + captain});
+            }
         }
+        Collections.shuffle(attempts);
 
-        Lot star = fixtures.openLot(auction, fixtures.profile("star"), 60);
-        bidService.submitBid(auction.getId(), star.getId(), 10, a.getId());
-        bidService.submitBid(auction.getId(), star.getId(), 10, b.getId());
-        auctionService.closeLot(star.getId());
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger accepted = new AtomicInteger();
 
-        // One captain spent everything, the other still holds credits: no free players yet.
-        assertThat(teamMembers.findByTournamentId(tournament.getId())).hasSize(1);
-        assertThatThrownBy(() -> auctionService.fillRemainingRandomly(auction.getId()))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("can still bid");
-
-        // Drain both captains - which one won the coin flip above is by design unknowable,
-        // and the fixture entities here are detached, so their credits are stale. The fill
-        // then runs on its own at the next close.
-        for (Long id : List.of(teamA.getId(), teamB.getId())) {
-            Team broke = teams.findById(id).orElseThrow();
-            broke.setRemainingCredits(0);
-            teams.saveAndFlush(broke);
+        List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
+        for (int[] attempt : attempts) {
+            futures.add(pool.submit(() -> {
+                start.await();
+                try {
+                    bidService.submitBid(w.auctionId(), w.lotId(), attempt[1], w.captain(attempt[0]));
+                    accepted.incrementAndGet();
+                } catch (RuntimeException expected) {
+                    // Too low by the time it was applied, or that team was already leading.
+                }
+                return null;
+            }));
         }
+        start.countDown();
+        for (var future : futures) {
+            future.get(30, TimeUnit.SECONDS);
+        }
+        pool.shutdown();
 
-        auctionService.nominate(auction.getId(), queued.getFirst().getPlayerProfile().getId());
-        auctionService.closeLot(queued.getFirst().getId());
+        List<Bid> placed = bids.findByLotIdOrderByIdAsc(w.lotId());
+        assertThat(placed).hasSize(accepted.get()).isNotEmpty();
+        // The lock is what makes this hold: each accepted bid saw the price the last one set.
+        for (int i = 1; i < placed.size(); i++) {
+            assertThat(placed.get(i).getAmount()).isGreaterThan(placed.get(i - 1).getAmount());
+            assertThat(placed.get(i).getTeamId()).isNotEqualTo(placed.get(i - 1).getTeamId());
+        }
+        Lot lot = lots.findById(w.lotId()).orElseThrow();
+        assertThat(lot.getWinningBid()).isEqualTo(placed.getLast().getAmount());
+        assertThat(lot.getWinningTeamId()).isEqualTo(placed.getLast().getTeamId());
 
-        // Four slots, four players: everyone lands somewhere, and nobody paid for them.
-        List<TeamMember> roster = teamMembers.findByTournamentId(tournament.getId());
-        assertThat(roster).hasSize(4);
-        assertThat(roster.stream().filter(m -> m.getPricePaid() == 0)).hasSize(3);
-        assertThat(teamMembers.findByTeamId(teamA.getId())).hasSize(2);
-        assertThat(teamMembers.findByTeamId(teamB.getId())).hasSize(2);
-        assertThat(lots.findByAuctionIdAndStatus(auction.getId(), LotStatus.PENDING)).isEmpty();
-        assertThat(credits(teamA.getId())).isZero();
-        assertThat(credits(teamB.getId())).isZero();
+        auctionService.closeLot(w.lotId());
+        auctionService.closeLot(w.lotId());
+        List<TeamMember> roster = teamMembers.findByTournamentId(w.tournament().getId());
+        assertThat(roster).hasSize(1);
+        assertThat(credits(lot.getWinningTeamId())).isEqualTo(100 - lot.getWinningBid());
     }
 
     @Test
@@ -309,10 +349,10 @@ class AuctionEngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("the pool has to match the open slots before the auction can start")
-    void startRejectsAPoolThatDoesNotFillEverySlot() {
-        // Rosters of 3 whose captains already hold a slot: two teams need exactly 4 players.
-        Tournament tournament = fixtures.tournament(100, 3, 1);
+    @DisplayName("team size comes from the pool at the start, rounded up so nobody is turned away")
+    void startSizesTeamsFromThePool() {
+        // Whatever size the tournament was created with is replaced at the start.
+        Tournament tournament = fixtures.tournament(100, 9, 1);
         Auction auction = fixtures.liveAuction(tournament, 30);
         auction.setStatus(AuctionStatus.SETUP);
         Team a = fixtures.team(tournament, "A", fixtures.user("capA"));
@@ -320,24 +360,18 @@ class AuctionEngineIntegrationTest {
         teamMembers.saveAndFlush(new TeamMember(a, fixtures.profile("capA-slot"), 0));
         teamMembers.saveAndFlush(new TeamMember(b, fixtures.profile("capB-slot"), 0));
 
+        assertThatThrownBy(() -> auctionService.start(auction.getId()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Nobody is in the queue");
+
+        // Two captains and three players don't divide evenly: teams of three, one a player short.
         for (int i = 0; i < 3; i++) {
             fixtures.queuedLot(auction, fixtures.profile("queued" + i));
         }
-        assertThatThrownBy(() -> auctionService.start(auction.getId()))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("3 player(s) for 4 open slot(s)")
-                .hasMessageContaining("Queue 1 more");
-
-        fixtures.queuedLot(auction, fixtures.profile("queued3"));
         assertThat(auctionService.start(auction.getId()).status()).isEqualTo(AuctionStatus.LIVE);
-        assertThat(tournaments.findById(tournament.getId()).orElseThrow().getStatus())
-                .isEqualTo(TournamentStatus.DRAFTING);
-
-        auction.setStatus(AuctionStatus.SETUP);
-        fixtures.queuedLot(auction, fixtures.profile("queued4"));
-        assertThatThrownBy(() -> auctionService.start(auction.getId()))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("only 4 open slot(s)");
+        Tournament started = tournaments.findById(tournament.getId()).orElseThrow();
+        assertThat(started.getRosterSize()).isEqualTo(3);
+        assertThat(started.getStatus()).isEqualTo(TournamentStatus.DRAFTING);
     }
 
     @Test
@@ -391,29 +425,6 @@ class AuctionEngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("undoing a sale reopens a finished draft")
-    void undoAfterCompletionReopensTheDraft() {
-        Tournament tournament = fixtures.tournament(100, 1, 1);
-        Auction auction = fixtures.liveAuction(tournament, 30);
-        User captain = fixtures.user("second-thoughts");
-        fixtures.team(tournament, "Second Thoughts", captain);
-        Lot lot = fixtures.openLot(auction, fixtures.profile("returned"), 60);
-        bidService.submitBid(auction.getId(), lot.getId(), 20, captain.getId());
-
-        assertThat(auctions.findById(auction.getId()).orElseThrow().getStatus())
-                .isEqualTo(AuctionStatus.COMPLETE);
-
-        auctionService.undoLastSale(auction.getId());
-
-        // A player is waiting again, so calling it finished would be a lie.
-        assertThat(auctions.findById(auction.getId()).orElseThrow().getStatus())
-                .isEqualTo(AuctionStatus.LIVE);
-        assertThat(tournaments.findById(tournament.getId()).orElseThrow().getStatus())
-                .isEqualTo(TournamentStatus.DRAFTING);
-        assertThat(lots.findById(lot.getId()).orElseThrow().getStatus()).isEqualTo(LotStatus.PENDING);
-    }
-
-    @Test
     @DisplayName("a player nobody bid on can be put up again")
     void unsoldPlayersStayInTheQueue() {
         World w = world(2, 100, 5, 60);
@@ -436,85 +447,10 @@ class AuctionEngineIntegrationTest {
 
         // And they can still be bought on the second time round.
         bidService.submitBid(w.auctionId(), w.lotId(), 7, w.captain(0));
-        bidService.submitBid(w.auctionId(), w.lotId(), 3, w.captain(1));
+        bidService.submitBid(w.auctionId(), w.lotId(), 9, w.captain(1));
+        auctionService.closeLot(w.lotId());
         assertThat(lots.findById(w.lotId()).orElseThrow().getStatus()).isEqualTo(LotStatus.SOLD);
-        assertThat(credits(w.teamId(0))).isEqualTo(93);
-    }
-
-    @Test
-    @DisplayName("a player put up again after an undo starts a fresh sealed round")
-    void reopeningIgnoresThePreviousRoundsBids() {
-        World w = world(2, 100, 5, 60);
-        bidService.submitBid(w.auctionId(), w.lotId(), 40, w.captain(0));
-        bidService.submitBid(w.auctionId(), w.lotId(), 30, w.captain(1));
-        auctionService.undoLastSale(w.auctionId());
-
-        auctionService.nominate(w.auctionId(), w.lot().getPlayerProfile().getId());
-
-        // The first round's 40 and 30 must not count as anyone being locked in.
-        Lot reopened = lots.findById(w.lotId()).orElseThrow();
-        assertThat(reopened.getStatus()).isEqualTo(LotStatus.OPEN);
-        AuctionSnapshot snapshot = auctionService.snapshot(w.auctionId(), w.captain(0));
-        assertThat(snapshot.currentLot().lockedInTeamIds()).isEmpty();
-        assertThat(snapshot.yourBid()).isNull();
-
-        bidService.submitBid(w.auctionId(), w.lotId(), 1, w.captain(0));
-        bidService.submitBid(w.auctionId(), w.lotId(), 2, w.captain(1));
-
-        Lot resold = lots.findById(w.lotId()).orElseThrow();
-        assertThat(resold.getWinningBid()).isEqualTo(2);
-        assertThat(resold.getWinningTeamId()).isEqualTo(w.teamId(1));
-        assertThat(credits(w.teamId(0))).isEqualTo(100);
-    }
-
-    @Test
-    @DisplayName("simultaneous sealed bids settle on exactly one winner")
-    void concurrentSubmissionsProduceOneCoherentSale() throws Exception {
-        World w = world(4, 100, 5, 60);
-
-        List<int[]> attempts = new ArrayList<>();
-        for (int captain = 0; captain < 4; captain++) {
-            for (int amount = 1; amount <= 5; amount++) {
-                attempts.add(new int[]{captain, amount * 3 + captain});
-            }
-        }
-        Collections.shuffle(attempts);
-
-        ExecutorService pool = Executors.newFixedThreadPool(8);
-        CountDownLatch start = new CountDownLatch(1);
-        AtomicInteger accepted = new AtomicInteger();
-
-        List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
-        for (int[] attempt : attempts) {
-            futures.add(pool.submit(() -> {
-                start.await();
-                try {
-                    bidService.submitBid(w.auctionId(), w.lotId(), attempt[1], w.captain(attempt[0]));
-                    accepted.incrementAndGet();
-                } catch (RuntimeException expected) {
-                    // Once all four are in the lot reveals, and later submissions are refused.
-                }
-                return null;
-            }));
-        }
-        start.countDown();
-        for (var future : futures) {
-            future.get(30, TimeUnit.SECONDS);
-        }
-        pool.shutdown();
-
-        assertThat(accepted.get()).isPositive();
-
-        Lot closed = lots.findById(w.lotId()).orElseThrow();
-        assertThat(closed.getStatus()).isEqualTo(LotStatus.SOLD);
-
-        // Exactly one sale, and the winner was charged exactly the revealed price - no
-        // double-charge from two threads settling the same lot.
-        List<TeamMember> roster = teamMembers.findByTournamentId(w.tournament().getId());
-        assertThat(roster).hasSize(1);
-        assertThat(roster.getFirst().getPricePaid()).isEqualTo(closed.getWinningBid());
-        assertThat(roster.getFirst().getTeam().getId()).isEqualTo(closed.getWinningTeamId());
-        assertThat(credits(closed.getWinningTeamId())).isEqualTo(100 - closed.getWinningBid());
+        assertThat(credits(w.teamId(1))).isEqualTo(91);
     }
 
     @Test
@@ -542,7 +478,7 @@ class AuctionEngineIntegrationTest {
 
         assertThatThrownBy(() -> bidService.submitBid(auction.getId(), lot.getId(), 1, a.getId()))
                 .isInstanceOf(BidRejectedException.class)
-                .hasMessageContaining("Minimum bid is 2");
+                .hasMessageContaining("Bid at least 2");
 
         assertThat(bidService.submitBid(auction.getId(), lot.getId(), 2, a.getId()).amount())
                 .isEqualTo(2);
@@ -585,30 +521,6 @@ class AuctionEngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("undo refunds the team and returns the player to the queue")
-    void undoLastSaleRefundsAndRequeues() {
-        World w = world(2, 100, 5, 60);
-        bidService.submitBid(w.auctionId(), w.lotId(), 30, w.captain(0));
-        bidService.submitBid(w.auctionId(), w.lotId(), 10, w.captain(1));
-
-        assertThat(credits(w.teamId(0))).isEqualTo(70);
-
-        auctionService.undoLastSale(w.auctionId());
-
-        assertThat(credits(w.teamId(0))).isEqualTo(100);
-        assertThat(teamMembers.findByTournamentId(w.tournament().getId())).isEmpty();
-
-        Lot requeued = lots.findById(w.lotId()).orElseThrow();
-        assertThat(requeued.getStatus()).isEqualTo(LotStatus.PENDING);
-        assertThat(requeued.getWinningBid()).isZero();
-        assertThat(requeued.getWinningTeamId()).isNull();
-        assertThat(requeued.getOpenedAt()).isNull();
-
-        // The audit log is deliberately left intact.
-        assertThat(bids.findByLotIdOrderByIdAsc(w.lotId())).isNotEmpty();
-    }
-
-    @Test
     @DisplayName("pausing freezes the countdown and takes the lot out of the sweeper's reach")
     void pauseFreezesTheCountdown() {
         World w = world(2, 100, 5, 5);
@@ -636,6 +548,9 @@ class AuctionEngineIntegrationTest {
         Auction auction = fixtures.liveAuction(tournament, 30);
         User captain = fixtures.user("done");
         fixtures.team(tournament, "Done", captain);
+        // Another team with room and a player still waiting keep the draft going.
+        fixtures.team(tournament, "Other", fixtures.user("other"));
+        fixtures.queuedLot(auction, fixtures.profile("p3"));
 
         Lot first = fixtures.openLot(auction, fixtures.profile("p1"), 60);
         bidService.submitBid(auction.getId(), first.getId(), 10, captain.getId());

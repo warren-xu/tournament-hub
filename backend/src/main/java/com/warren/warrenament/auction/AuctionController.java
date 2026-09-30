@@ -33,16 +33,10 @@ public class AuctionController {
         this.bids = bids;
     }
 
-    /**
-     * Full room state. Clients call this on join and after a reconnect to resync.
-     * <p>
-     * A captain's own sealed bid comes back with it, so a refresh mid-lot does not leave
-     * them wondering whether their bid landed.
-     */
+    /** Full room state. Clients call this on join and after a reconnect to resync. */
     @GetMapping("/{auctionId}")
-    public AuctionSnapshot snapshot(@PathVariable Long auctionId,
-                                    @AuthenticationPrincipal AppUser user) {
-        return auctions.snapshot(auctionId, user == null ? null : user.userId());
+    public AuctionSnapshot snapshot(@PathVariable Long auctionId) {
+        return auctions.snapshot(auctionId);
     }
 
     /** The remaining queue, for the admin's nomination picker. */
@@ -114,23 +108,6 @@ public class AuctionController {
     public AuctionSnapshot closeLot(@PathVariable Long auctionId, @PathVariable Long lotId) {
         auctions.closeLot(lotId);
         return auctions.snapshot(auctionId);
-    }
-
-    /**
-     * Deals the leftovers out at random. Refused while any captain still holds credits -
-     * see {@link AuctionService#fillRemainingRandomly}. Normally this runs by itself the
-     * moment the last credit is spent; this is here for when an undo re-opens the question.
-     */
-    @PostMapping("/{auctionId}/fill-random")
-    @PreAuthorize("hasRole('ADMIN')")
-    public AuctionSnapshot fillRandom(@PathVariable Long auctionId) {
-        return auctions.fillRemainingRandomly(auctionId);
-    }
-
-    @PostMapping("/{auctionId}/undo")
-    @PreAuthorize("hasRole('ADMIN')")
-    public AuctionSnapshot undo(@PathVariable Long auctionId) {
-        return auctions.undoLastSale(auctionId);
     }
 
     @PutMapping("/{auctionId}/settings")

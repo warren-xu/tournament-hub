@@ -44,17 +44,20 @@ public class BidService {
         this.events = events;
     }
 
+    /** Every bid gives the room at least this long to answer before the lot closes. */
+    static final int BID_RESET_SECONDS = 10;
+
     /**
-     * Records a captain's sealed bid for the player on the block.
+     * Places a live bid: it must beat the current price by at least one credit, and the
+     * team holding the player can't bid against itself. The new price, leader and
+     * deadline go to the whole room at once.
      * <p>
-     * The amount is never broadcast - the room only learns that this team has locked in.
-     * Captains may resubmit until the window closes; the reveal reads each team's last bid,
-     * and the earlier ones stay in the audit trail.
-     * <p>
-     * The lot row is locked for the transaction so the "is everyone in?" count that decides
-     * an early reveal cannot be run against a stale read.
+     * Each bid restarts a short countdown ({@link #BID_RESET_SECONDS}) without ever
+     * shortening the clock. The lot row is locked for the transaction, so two captains
+     * bidding in the same moment are applied one after the other and the second is checked
+     * against the price the first one set.
      *
-     * @return the bid as recorded, returned to its author alone
+     * @return the bid as recorded
      * @throws BidRejectedException when the bid is understood but not allowed
      */
     @Transactional
@@ -82,8 +85,12 @@ public class BidService {
         Team team = teams.findByTournamentIdAndCaptainUserId(tournament.getId(), userId)
                 .orElseThrow(() -> new ForbiddenException("You are not a captain in this tournament"));
 
-        if (amount < tournament.getMinBid()) {
-            throw new BidRejectedException("Minimum bid is " + tournament.getMinBid());
+        if (team.getId().equals(lot.getWinningTeamId())) {
+            throw new BidRejectedException("You already hold this player");
+        }
+        int floor = mapper.nextMinimum(lot, tournament);
+        if (amount < floor) {
+            throw new BidRejectedException("Bid at least " + floor);
         }
 
         int rosterCount = teamMembers.countByTeamId(team.getId());
@@ -91,38 +98,36 @@ public class BidService {
             throw new BidRejectedException("Your roster is already full");
         }
 
-        // The only ceiling is what the team actually holds. Spending it all is a legal,
-        // and sometimes deliberate, way to play - see BudgetRules.
+        // The only ceiling is what the team actually holds - see BudgetRules.
         int ceiling = BudgetRules.maxBid(team.getRemainingCredits(), rosterCount, tournament.getRosterSize());
         if (amount > ceiling) {
             throw new BidRejectedException("You only have " + ceiling + " credits left");
         }
 
+        lot.setWinningBid(amount);
+        lot.setWinningTeamId(team.getId());
+        Instant reset = now.plusSeconds(BID_RESET_SECONDS);
+        if (lot.getEndsAt().isBefore(reset)) {
+            lot.setEndsAt(reset);
+        }
         // Flush so the @Version bump is visible in the payload clients use for ordering.
         lots.saveAndFlush(lot);
         Bid bid = bids.saveAndFlush(new Bid(lotId, team.getId(), userId, amount));
 
+        BidView view = new BidView(
+                bid.getId(), lotId, team.getId(), team.getName(), amount, bid.getCreatedAt());
         events.publishEvent(new AuctionEvents(auction.getId(), new AuctionMessage(
-                AuctionMessage.Type.BID_LOCKED,
+                AuctionMessage.Type.BID_PLACED,
                 auction.getId(),
                 auction.getStatus(),
                 mapper.toLotView(lot, tournament),
-                // Deliberately no BidView: the amount is the whole secret.
-                null,
-                null,
+                view,
                 mapper.toTeamViews(tournament),
-                team.getName() + " bid",
+                "%s bid %d".formatted(team.getName(), amount),
                 Instant.now())));
 
-        BidView view = new BidView(
-                bid.getId(), lotId, team.getId(), team.getName(), amount, bid.getCreatedAt());
-
-        // Nobody left to wait for: reveal now rather than making the room watch a dead clock.
-        // Captains who cannot afford the floor, or whose roster is full, are not waited on.
-        if (mapper.lockedInTeamIds(lot).size() >= mapper.captainsExpected(tournament)) {
-            auctions.closeLot(lotId);
-        }
-
+        // Nobody left who could beat this: settle now rather than make the room watch a dead clock.
+        auctions.closeIfUncontested(lot);
         return view;
     }
 
@@ -132,12 +137,12 @@ public class BidService {
         Team team = teams.findByTournamentIdAndCaptainUserId(tournamentId, userId)
                 .orElseThrow(() -> new ForbiddenException("You are not a captain in this tournament"));
         Tournament tournament = team.getTournament();
-        lots.findById(lotId).orElseThrow(() -> NotFoundException.of("Lot", lotId));
+        Lot lot = lots.findById(lotId).orElseThrow(() -> NotFoundException.of("Lot", lotId));
 
         int rosterCount = teamMembers.countByTeamId(team.getId());
         return Map.of(
                 "maxBid", BudgetRules.maxBid(
                         team.getRemainingCredits(), rosterCount, tournament.getRosterSize()),
-                "minBid", tournament.getMinBid());
+                "minBid", mapper.nextMinimum(lot, tournament));
     }
 }

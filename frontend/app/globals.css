@@ -111,7 +111,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .live-dot, .pool-hint, .turn-banner, .turn-banner::before, .turn-dot, .turn-toast {
+  .live-dot, .pool-hint, .turn-banner, .turn-banner::before, .turn-dot, .turn-toast, .status-dot {
     animation: none;
   }
   *, *::before, *::after {
@@ -198,6 +198,9 @@
 .turn-toast .turn-dot { background: var(--color-bone); }
 .turn-toast-close { display: grid; place-items: center; width: 32px; height: 32px; margin-left: auto; color: var(--color-bone); cursor: pointer; }
 .turn-toast-close:focus-visible { outline: 2px solid var(--color-bone); }
+/* The tournaments list's status marker; a live draft pulses like the "your turn" dot. */
+.status-dot { display: inline-block; flex-shrink: 0; width: 10px; height: 10px; border-radius: 50%; }
+.status-dot[data-live] { animation: turn-pulse 1.2s ease-in-out infinite; }
 @keyframes turn-sweep { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
 @keyframes turn-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
 @keyframes turn-arrive { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
@@ -257,34 +260,6 @@
 .pool-dialog-close { position: absolute; top: 10px; right: 10px; z-index: 40; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #bdc8d060; border-radius: 50%; background: #202a34e6; cursor: pointer; }
 body:has(.pool-dialog[open]) { overflow: hidden; }
 @keyframes pool-reveal { from { opacity: 0; transform: scale(.9) translateY(12px); } to { opacity: 1; transform: none; } }
-/* The reveal: bids drop in one after another rather than all at once, so the room
-   reads them in order instead of seeing a wall of numbers. */
-.bid-reveal {
-  animation: bid-reveal 320ms ease-out both;
-}
-@keyframes bid-reveal {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: none; }
-}
-
-/* The end-of-auction draw. The blur while spinning is what sells it as motion rather
-   than a name that keeps changing its mind. */
-.roulette-slot {
-  transition: filter 220ms ease-out, transform 220ms ease-out;
-  filter: blur(0.6px);
-}
-.roulette-landed {
-  filter: none;
-  transform: scale(1.06);
-
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .bid-reveal { animation: none; }
-  .roulette-slot { filter: none; transition: none; }
-  .roulette-landed { transform: none; }
-}
-
 /* Long player and team names in the draft room wrap instead of overflowing. */
 .auction-room h2 { overflow-wrap: anywhere; }
 

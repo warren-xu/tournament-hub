@@ -134,7 +134,7 @@ The frontend deploys separately with `npx vercel --prod` from `frontend/`.
 | `POST PUT DELETE` | `/api/agents`, `/api/agents/{id}` | admin — manual fallback |
 | `PUT` | `/api/ranks/{id}` | admin — rename or hide a tier |
 | `GET` | `/api/auctions/{id}` | anyone — full room snapshot |
-| `POST` | `/api/auctions/{id}/{start,pause,resume,nominate,undo,complete}` | admin |
+| `POST` | `/api/auctions/{id}/{start,pause,resume,nominate,complete}` | admin |
 
 Bidding is the only thing that goes over STOMP:
 
@@ -197,19 +197,21 @@ Override the sources with `app.agents.source-url` and `app.ranks.source-url`.
 
 Everything else here is CRUD. These are the parts that cost you a live event if they're wrong.
 
-**Budget and bids.** Bids are sealed. A captain may bid anything from `minBid` (1 by
-default) up to everything their team has left; nothing is held back for later slots, and a
-captain who spends it all just gets whoever is left when the leftovers are dealt out.
-`TeamView.maxBid` ships the ceiling so the UI can disable illegal bids; the server enforces
-it regardless. Not bidding is how a captain passes. A lot nobody bids on goes unsold and back to
-the end of the queue.
+**Live bidding.** When a lot opens, the team whose captain nominated holds the player at
+0. Any other captain can take the lead with a bid at least one credit over the current price
+(`minBid`, 1 by default, is the first step), up to everything their team has left; nothing
+is held back for later slots. The team in the lead can't raise itself. Each bid restarts a
+10-second countdown (`BidService.BID_RESET_SECONDS`) without ever shortening the clock.
+Whoever holds the player when time runs out takes them at that price; if nobody bid, the
+nominator keeps them for 0. `TeamView.maxBid` ships the ceiling so the UI can disable
+illegal bids; the server enforces it regardless.
 
-A team is only waited on before an early reveal while it has a free slot and can afford
-the floor (`BudgetRules.canBid`). Once no team can, the remaining players are dealt out at
-random.
+A lot closes early the moment no other team could outbid (no free slot, or not enough
+credits for the next step, per `BudgetRules.canBid`). Late in a draft, when everyone else is
+broke or full, each nomination settles immediately instead of running a dead clock.
 
 **Concurrency.** Two captains clicking in the same millisecond is the normal case, not the
-edge case. `BidService.placeBid` locks the lot row (`PESSIMISTIC_WRITE`) for the whole
+edge case. `BidService.submitBid` locks the lot row (`PESSIMISTIC_WRITE`) for the whole
 transaction, so bids apply one at a time and each validates against the real current price
 rather than a stale read. The integration test fires 20 concurrent bids and asserts the
 accepted amounts strictly increase — that ordering is what proves the serialisation.
@@ -230,9 +232,8 @@ lot can't be won by clicking last.
 is what takes the lot out of the sweeper's view. Resume restores the remaining time — nobody
 loses seconds to an admin timeout.
 
-**Undo.** Reverses the most recent sale: refunds the team, removes the roster entry, returns
-the player to the queue. The `bids` table is append-only and is left intact — when a draft
-goes wrong mid-event, that table is how you reconstruct it.
+**No undo.** Sales are final. The `bids` table is append-only — when a draft goes wrong
+mid-event, that table is how you reconstruct it.
 
 ## Known gaps
 
@@ -285,9 +286,10 @@ it creates a team per captain with them seated (price 0), opens sign-ups (`REGIS
 and creates the auction with an empty queue. Adding a team later from the tournament page
 seats its captain the same way and takes them out of the queue.
 
-Team size is set when the draft first starts: captains plus queued players, split evenly
-across the teams (at most 10 per team). If they don't divide evenly, start is refused with
-how many to add or remove.
+Team size is set when the draft first starts: captains plus queued players, divided across
+the teams and rounded up. If that doesn't divide evenly some teams finish a player short;
+nobody is turned away, since a team can carry a substitute. Start is refused only when
+nobody is queued. Bids stop once a team reaches that size.
 
 `V17` adds a nullable `starts_at` to tournaments (null means "to be announced"). The
 frontend serves it as add-to-calendar links: a Google Calendar template link and an .ics

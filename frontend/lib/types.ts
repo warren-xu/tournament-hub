@@ -149,17 +149,13 @@ export interface LotView {
   seq: number;
   status: LotStatus;
   player: PlayerSummary;
-  /** 0 until the reveal — every amount is sealed while the lot is open. */
+  /** While open: the current price (0 before any bid). Once closed: what it sold for. */
   winningBid: number;
+  /** While open: who holds the player (the nominating team until someone bids). */
   winningTeamId: number | null;
   winningTeamName: string | null;
+  /** The lowest bid accepted right now: one over the current price. */
   minBid: number;
-  /** Who has committed. Public; what they committed is not. */
-  lockedInTeamIds: number[];
-  /** Captains who can still bid, and so are worth waiting for. */
-  captainsExpected: number;
-  /** Dealt out by the random fill rather than won with credits. */
-  randomlyAssigned: boolean;
   endsAt: string | null;
   version: number;
 }
@@ -199,10 +195,8 @@ export interface AuctionSnapshot {
   status: AuctionStatus;
   currentLot: LotView | null;
   teams: AuctionTeamView[];
-  /** Revealed bids for a closed lot; empty while one is open. */
+  /** Bids on the player up now, newest first; empty between players. */
   recentBids: BidView[];
-  /** The viewer's own sealed bid on the open lot. Nobody else's is sent. */
-  yourBid: number | null;
   pendingLots: number;
   /** The team whose captain nominates next; null outside a running draft. */
   turnTeamId: number | null;
@@ -213,9 +207,8 @@ export interface AuctionSnapshot {
 
 export type AuctionMessageType =
   | "LOT_OPENED"
-  | "BID_LOCKED"
+  | "BID_PLACED"
   | "LOT_CLOSED"
-  | "RANDOM_ASSIGNED"
   | "STATUS_CHANGED"
   | "SNAPSHOT";
 
@@ -225,8 +218,6 @@ export interface AuctionMessage {
   status: AuctionStatus | null;
   lot: LotView | null;
   bid: BidView | null;
-  /** Every captain's sealed bid, sent once — with the LOT_CLOSED reveal. */
-  reveal: BidView[] | null;
   teams: AuctionTeamView[] | null;
   note: string | null;
   serverTime: string;

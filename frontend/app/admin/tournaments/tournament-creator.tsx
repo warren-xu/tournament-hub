@@ -70,7 +70,7 @@ export function TournamentCreator({ profiles }: { profiles: ProfileView[] }) {
         {step === 2 ? <>
           <h3 className="text-xl">{name.trim()}</h3>
           <p className="text-sm text-muted">Starts {startsAtIso ? <LocalTime iso={startsAtIso} /> : "on a date to be announced"}</p>
-          <ul className="space-y-2">{captainIds.map((id, i) => { const p = profiles.find(p => p.id === id)!; return <li key={id} className="rounded-lg border border-line p-3"><strong>Team {i + 1} · {p.username}</strong><p className="mt-1 text-sm text-muted">Captain: {p.username}</p></li>; })}</ul>
+          <ul className="space-y-2">{captainIds.map((id, i) => { const p = profiles.find(p => p.id === id)!; return <li key={id} className="rounded-lg border border-line p-3"><strong>{p.username}</strong><p className="mt-1 text-sm text-muted">Team {i + 1} · named after its captain, renameable later</p></li>; })}</ul>
           <p className="text-sm text-muted">Sign-ups open as soon as you create the tournament: players who sign up join the draft pool and go straight into the auction queue. From the tournament page you can also add any other player by hand until the draft starts. Team size is set when you start it.</p>
         </> : null}
       </fieldset>

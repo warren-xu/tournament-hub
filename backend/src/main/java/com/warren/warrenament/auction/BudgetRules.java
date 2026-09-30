@@ -1,6 +1,6 @@
 package com.warren.warrenament.auction;
 
-/** The arithmetic that decides whether a sealed bid is legal. */
+/** The arithmetic that decides whether a bid is legal. */
 public final class BudgetRules {
 
     private BudgetRules() {
@@ -20,10 +20,8 @@ public final class BudgetRules {
     }
 
     /**
-     * Whether a team is still a real bidder: it needs a free slot and enough credits for the
-     * floor (never less than one). Teams that aren't are not waited on when a lot is deciding
-     * whether every captain has locked in, and once no team is, the leftovers are dealt out
-     * at random.
+     * Whether a team could still make a bid of {@code minBid}: it needs a free slot and the
+     * credits for it (never less than one). A lot nobody else could bid on closes at once.
      */
     public static boolean canBid(int remainingCredits, int rosterCount, int rosterSize, int minBid) {
         return rosterCount < rosterSize && remainingCredits >= Math.max(1, minBid);

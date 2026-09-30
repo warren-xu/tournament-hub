@@ -25,27 +25,21 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.warren.warrenament.auction.AuctionDtos.BidView;
 
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.Comparator;
-import java.util.Random;
 
-/** Admin-driven lifecycle of an auction: build the queue, nominate, pause, close, undo. */
+/** Admin-driven lifecycle of an auction: build the queue, nominate, pause, close. */
 @Service
 public class AuctionService {
 
     private static final Logger log = LoggerFactory.getLogger(AuctionService.class);
-
-    /** Settles tied sealed bids and deals out the leftovers. Nothing here needs a seed. */
-    private final Random random = new SecureRandom();
 
     private final AuctionRepository auctions;
     private final LotRepository lots;
@@ -82,18 +76,12 @@ public class AuctionService {
         return mapper.toSnapshot(require(auctionId));
     }
 
-    /** As {@link #snapshot}, but a captain also gets back their own sealed bid. */
-    @Transactional(readOnly = true)
-    public AuctionSnapshot snapshot(Long auctionId, Long viewerUserId) {
-        return mapper.toSnapshot(require(auctionId), viewerUserId);
-    }
 
     /**
      * Players still to place, in nomination order, so an admin can pick who goes up next.
      * <p>
-     * Includes the ones who drew no bids: under sealed bidding a whole room can pass on
-     * someone, and leaving them out of this list is what strands a draft with an empty
-     * slot and nobody to put in it.
+     * Includes the ones who went unsold: leaving them out of this list is what strands a
+     * draft with an empty slot and nobody to put in it.
      */
     @Transactional(readOnly = true)
     public List<AuctionDtos.LotView> queue(Long auctionId) {
@@ -200,7 +188,7 @@ public class AuctionService {
         if (auction.getStatus() == AuctionStatus.SETUP) {
             fitRosterSizeToPool(auction, tournament, roster);
         }
-        requireSlotsMatchPool(auction, tournament, roster);
+        requireRoomForEveryone(auction, tournament, roster);
         auction.setStatus(AuctionStatus.LIVE);
         if (auction.getTurnTeamId() == null) {
             advanceTurn(auction);
@@ -320,7 +308,7 @@ public class AuctionService {
         auctions.saveAndFlush(auction);
         publishStatus(auction, "%s nominated %s".formatted(
                 turn.getName(), lot.getPlayerProfile().getUser().getUsername()));
-        return mapper.toSnapshot(auction, captainUserId);
+        return mapper.toSnapshot(auction);
     }
 
     /**
@@ -359,8 +347,9 @@ public class AuctionService {
 
         Instant now = Instant.now();
         lot.setStatus(LotStatus.OPEN);
+        // The nominating team starts holding the player at 0: if nobody bids, they keep them.
         lot.setWinningBid(0);
-        lot.setWinningTeamId(null);
+        lot.setWinningTeamId(auction.getTurnTeamId());
         lot.setPausedRemainingMs(null);
         // Stamped before endsAt so no bid can ever land outside the round it belongs to.
         lot.setOpenedAt(now);
@@ -378,23 +367,47 @@ public class AuctionService {
                 auction.getStatus(),
                 mapper.toLotView(lot, auction.getTournament()),
                 null,
-                null,
                 mapper.toTeamViews(auction.getTournament()),
                 lot.getPlayerProfile().getUser().getUsername() + " is up",
                 Instant.now())));
 
-        return mapper.toSnapshot(auction);
+        closeIfUncontested(lot);
+        return mapper.toSnapshot(require(auction.getId()));
     }
 
     /**
-     * Reveals an expired lot and settles it.
-     * <p>
-     * Every captain's last sealed bid is opened at once; the highest takes the player at
-     * exactly what they wrote. Equal top bids are settled by a coin flip, because there is
-     * no bidding order to fall back on - the bids were never seen by anyone.
+     * Closes an open lot early when no team other than the one holding it could still
+     * outbid: none has both a free slot and the credits for the next bid. Late in a draft,
+     * when everyone else is broke or full, this is what keeps the room from watching one
+     * dead clock after another.
+     */
+    @Transactional
+    public void closeIfUncontested(Lot lot) {
+        if (lot.getStatus() != LotStatus.OPEN) {
+            return;
+        }
+        Tournament tournament = lot.getAuction().getTournament();
+        int next = mapper.nextMinimum(lot, tournament);
+        Map<Long, Integer> rosterCounts = mapper.rosterCounts(tournament.getId());
+        boolean contested = teams.findByTournamentId(tournament.getId()).stream()
+                .filter(team -> !team.getId().equals(lot.getWinningTeamId()))
+                .anyMatch(team -> BudgetRules.canBid(
+                        team.getRemainingCredits(),
+                        rosterCounts.getOrDefault(team.getId(), 0),
+                        tournament.getRosterSize(),
+                        next));
+        if (!contested) {
+            closeLot(lot.getId());
+        }
+    }
+
+    /**
+     * Settles a lot: whoever holds it when it closes takes the player at the current price.
+     * That's the top bidder, or the nominating team at 0 if nobody bid. A lot nobody holds
+     * (no team was nominating) goes unsold and back to the queue.
      * <p>
      * Idempotent: a lot that is no longer OPEN is left alone, so the sweeper, an early
-     * "everyone is in" reveal and an admin can all call this without double-charging.
+     * close and an admin can all call this without double-charging.
      */
     @Transactional
     public void closeLot(Long lotId) {
@@ -407,38 +420,32 @@ public class AuctionService {
 
         Auction auction = lot.getAuction();
         Tournament tournament = auction.getTournament();
-        Map<Long, String> teamNames = mapper.teamNames(tournament.getId());
-        List<BidView> reveal = mapper.revealFor(lot, teamNames);
+        String player = lot.getPlayerProfile().getUser().getUsername();
         String note;
 
-        List<BidView> contenders = affordable(reveal, tournament);
-        if (contenders.isEmpty()) {
+        Team team = lot.getWinningTeamId() == null ? null
+                : teams.findByIdForUpdate(lot.getWinningTeamId()).orElse(null);
+        // Bidding checks both of these, so failing here means state moved under the lot.
+        boolean placeable = team != null
+                && teamMembers.countByTeamId(team.getId()) < tournament.getRosterSize()
+                && team.getRemainingCredits() >= lot.getWinningBid();
+        if (!placeable) {
+            if (team != null) {
+                log.warn("Lot {}: {} can no longer take {} at {}", lotId, team.getName(), player, lot.getWinningBid());
+            }
             lot.setStatus(LotStatus.UNSOLD);
             lot.setWinningBid(0);
             lot.setWinningTeamId(null);
-            note = reveal.isEmpty()
-                    ? lot.getPlayerProfile().getUser().getUsername() + ": no bids"
-                    : lot.getPlayerProfile().getUser().getUsername() + ": unsold";
+            note = player + ": unsold";
         } else {
-            int top = contenders.getFirst().amount();
-            List<BidView> tied = contenders.stream().filter(b -> b.amount() == top).toList();
-            BidView won = tied.size() == 1 ? tied.getFirst() : tied.get(random.nextInt(tied.size()));
-
-            Team team = teams.findByIdForUpdate(won.teamId())
-                    .orElseThrow(() -> NotFoundException.of("Team", won.teamId()));
-            team.setRemainingCredits(team.getRemainingCredits() - top);
+            int price = lot.getWinningBid();
+            team.setRemainingCredits(team.getRemainingCredits() - price);
             teams.saveAndFlush(team);
-            teamMembers.saveAndFlush(new TeamMember(team, lot.getPlayerProfile(), top));
-
+            teamMembers.saveAndFlush(new TeamMember(team, lot.getPlayerProfile(), price));
             lot.setStatus(LotStatus.SOLD);
-            lot.setWinningBid(top);
-            lot.setWinningTeamId(team.getId());
-            note = tied.size() == 1
-                    ? "%s sold to %s for %d".formatted(
-                            lot.getPlayerProfile().getUser().getUsername(), team.getName(), top)
-                    : "%s sold to %s for %d (%d-way tie, random pick)".formatted(
-                            lot.getPlayerProfile().getUser().getUsername(), team.getName(),
-                            top, tied.size());
+            note = price == 0
+                    ? "%s goes to %s (no bids)".formatted(player, team.getName())
+                    : "%s sold to %s for %d".formatted(player, team.getName(), price);
         }
 
         lot.setEndsAt(null);
@@ -458,83 +465,11 @@ public class AuctionService {
                 auction.getStatus(),
                 mapper.toLotView(lot, tournament),
                 null,
-                reveal,
                 mapper.toTeamViews(tournament),
                 note,
                 Instant.now())));
 
-        dealOutRemainderIfNobodyCanBid(auction);
         completeIfEverybodyIsPlaced(auction);
-    }
-
-    /**
-     * Bids their team can still honour, highest first.
-     * <p>
-     * Bidding already checks both of these, so a bid failing here means state moved under
-     * it - a sale undone mid-lot, say - and dropping it beats voiding the whole sale.
-     */
-    private List<BidView> affordable(List<BidView> reveal, Tournament tournament) {
-        Map<Long, Integer> rosterCounts = mapper.rosterCounts(tournament.getId());
-        return reveal.stream()
-                .filter(bid -> teams.findById(bid.teamId())
-                        .map(team -> {
-                            int roster = rosterCounts.getOrDefault(team.getId(), 0);
-                            boolean ok = roster < tournament.getRosterSize()
-                                    && team.getRemainingCredits() >= bid.amount();
-                            if (!ok) {
-                                log.warn("Dropping {}'s bid of {}: {} credits, roster {}/{}",
-                                        team.getName(), bid.amount(), team.getRemainingCredits(),
-                                        roster, tournament.getRosterSize());
-                            }
-                            return ok;
-                        })
-                        .orElse(false))
-                .toList();
-    }
-
-    /**
-     * Reverses the most recent sale in the tournament: refunds the team, removes the roster
-     * entry and returns the player to the queue. The bid history is left intact.
-     */
-    @Transactional
-    public AuctionSnapshot undoLastSale(Long auctionId) {
-        Auction auction = require(auctionId);
-        Tournament tournament = auction.getTournament();
-
-        TeamMember member = teamMembers.findFirstByTournamentIdOrderByIdDesc(tournament.getId())
-                .orElseThrow(() -> new BadRequestException("There are no sales to undo"));
-
-        Team team = teams.findByIdForUpdate(member.getTeam().getId())
-                .orElseThrow(() -> NotFoundException.of("Team", member.getTeam().getId()));
-        team.setRemainingCredits(team.getRemainingCredits() + member.getPricePaid());
-        teams.saveAndFlush(team);
-
-        Long profileId = member.getPlayerProfile().getId();
-        String username = member.getPlayerProfile().getUser().getUsername();
-        teamMembers.delete(member);
-        teamMembers.flush();
-
-        lots.findByAuctionIdAndPlayerProfileId(auctionId, profileId).ifPresent(lot -> {
-            lot.setStatus(LotStatus.PENDING);
-            lot.setWinningBid(0);
-            lot.setWinningTeamId(null);
-            lot.setEndsAt(null);
-            // Cleared so the next time this player goes up it is a fresh sealed round.
-            lot.setOpenedAt(null);
-            lot.setPausedRemainingMs(null);
-            lots.saveAndFlush(lot);
-        });
-
-        if (auction.getStatus() == AuctionStatus.COMPLETE) {
-            // There is a player to place again, so the draft is no longer over.
-            auction.setStatus(AuctionStatus.LIVE);
-            auctions.saveAndFlush(auction);
-            tournament.setStatus(TournamentStatus.DRAFTING);
-            tournaments.saveAndFlush(tournament);
-        }
-
-        publishStatus(auction, "Undid %s's sale to %s".formatted(username, team.getName()));
-        return mapper.toSnapshot(auction);
     }
 
     @Transactional
@@ -596,95 +531,6 @@ public class AuctionService {
     }
 
     /**
-     * Deals the players nobody can afford any more out at random, free of charge.
-     * <p>
-     * This is the safety net the "no maximum bid" rule leans on: a captain may empty the
-     * budget on one star, and the cost of that is losing all say in who fills the rest of
-     * the roster. It deliberately does not run while anyone can still bid - a team holding
-     * credits has earned the right to use them.
-     *
-     * @throws BadRequestException if a captain could still bid, or nothing is left to deal
-     */
-    @Transactional
-    public AuctionSnapshot fillRemainingRandomly(Long auctionId) {
-        Auction auction = require(auctionId);
-        if (bidderStillHoldingCredits(auction.getTournament())) {
-            throw new BadRequestException(
-                    "A captain can still bid. The random fill is only for players nobody has "
-                            + "credits left for.");
-        }
-        if (remainingLots(auctionId).isEmpty()) {
-            throw new BadRequestException("Every player has been dealt with");
-        }
-        int dealt = dealOutRemainder(auction);
-        return dealt == 0 ? mapper.toSnapshot(auction) : mapper.toSnapshot(require(auctionId));
-    }
-
-    /** Runs the fill automatically the moment the last credit leaves the room. */
-    private void dealOutRemainderIfNobodyCanBid(Auction auction) {
-        if (auction.getStatus() != AuctionStatus.LIVE
-                || bidderStillHoldingCredits(auction.getTournament())
-                || remainingLots(auction.getId()).isEmpty()) {
-            return;
-        }
-        dealOutRemainder(auction);
-    }
-
-    /**
-     * Pairs the players left with the roster slots left, both shuffled, and hands each one
-     * over at a price of zero. One message per assignment, in order, so the room can play
-     * them out one at a time rather than having a finished bracket appear.
-     *
-     * @return how many players found a slot
-     */
-    private int dealOutRemainder(Auction auction) {
-        Tournament tournament = auction.getTournament();
-        List<Lot> waiting = new ArrayList<>(remainingLots(auction.getId()));
-        List<Team> slots = openSlots(tournament);
-
-        Collections.shuffle(waiting, random);
-        Collections.shuffle(slots, random);
-
-        int dealt = Math.min(waiting.size(), slots.size());
-        for (int i = 0; i < dealt; i++) {
-            Lot lot = waiting.get(i);
-            Long teamId = slots.get(i).getId();
-            Team team = teams.findByIdForUpdate(teamId)
-                    .orElseThrow(() -> NotFoundException.of("Team", teamId));
-
-            teamMembers.saveAndFlush(new TeamMember(team, lot.getPlayerProfile(), 0));
-            lot.setStatus(LotStatus.SOLD);
-            lot.setWinningBid(0);
-            lot.setWinningTeamId(team.getId());
-            lot.setEndsAt(null);
-            lot.setPausedRemainingMs(null);
-            lots.saveAndFlush(lot);
-
-            events.publishEvent(new AuctionEvents(auction.getId(), new AuctionMessage(
-                    AuctionMessage.Type.RANDOM_ASSIGNED,
-                    auction.getId(),
-                    auction.getStatus(),
-                    mapper.toLotView(lot, tournament),
-                    null,
-                    null,
-                    mapper.toTeamViews(tournament),
-                    "%s to %s (random)".formatted(
-                            lot.getPlayerProfile().getUser().getUsername(), team.getName()),
-                    Instant.now())));
-        }
-
-        int stranded = waiting.size() - dealt;
-        publishStatus(auction, stranded == 0
-                ? "No credits left. %d player(s) assigned at random"
-                        .formatted(dealt)
-                : "%d player(s) assigned at random, %d unplaced"
-                        .formatted(dealt, stranded));
-        log.info("Auction {}: dealt {} players at random, {} stranded", auction.getId(), dealt, stranded);
-        completeIfEverybodyIsPlaced(auction);
-        return dealt;
-    }
-
-    /**
      * Players still waiting (never nominated, or nominated and nobody bid), in queue order:
      * unseen before unsold, then highest rank first, then whoever joined first. Sorted on
      * every read, so the order follows rank changes made after joining.
@@ -720,16 +566,6 @@ public class AuctionService {
         return slots;
     }
 
-    private boolean bidderStillHoldingCredits(Tournament tournament) {
-        Map<Long, Integer> rosterCounts = mapper.rosterCounts(tournament.getId());
-        return teams.findByTournamentId(tournament.getId()).stream()
-                .anyMatch(team -> BudgetRules.canBid(
-                        team.getRemainingCredits(),
-                        rosterCounts.getOrDefault(team.getId(), 0),
-                        tournament.getRosterSize(),
-                        tournament.getMinBid()));
-    }
-
     /**
      * Every player needs a slot and every slot needs a player, or the draft ends with a
      * roster short and someone with nowhere to go. Counted in slots rather than whole
@@ -738,47 +574,34 @@ public class AuctionService {
      * Checked when the auction starts, while it is still cheap to add a player or a team.
      */
     /**
-     * Sets team size from who actually turned up: everyone already seated (the captains)
-     * plus everyone queued, split evenly across the teams. With open sign-ups nobody knows
-     * the numbers until now, and a tournament set up with picked players comes out unchanged.
+     * Sets the player limit from who actually turned up: everyone already seated (the
+     * captains) plus everyone queued, divided across the teams and rounded up. When that
+     * doesn't divide evenly some teams finish a player short; nobody is turned away, since
+     * a team can always carry a substitute.
      */
     private void fitRosterSizeToPool(Auction auction, Tournament tournament, List<Team> roster) {
         Map<Long, Integer> rosterCounts = mapper.rosterCounts(tournament.getId());
         int seated = roster.stream().mapToInt(team -> rosterCounts.getOrDefault(team.getId(), 0)).sum();
+        int most = roster.stream().mapToInt(team -> rosterCounts.getOrDefault(team.getId(), 0)).max().orElse(0);
         int waiting = remainingLots(auction.getId()).size();
         if (waiting == 0) {
             throw new BadRequestException("Nobody is in the queue yet.");
         }
-        int people = seated + waiting;
-        if (people % roster.size() != 0) {
-            int over = people % roster.size();
-            throw new BadRequestException(
-                    "%d player(s) and %d captain(s) don't split evenly across %d teams. Queue %d more or remove %d."
-                            .formatted(waiting, seated, roster.size(), roster.size() - over, over));
-        }
-        int size = people / roster.size();
-        if (size > 10) {
-            throw new BadRequestException(
-                    "That makes teams of %d. Teams can have at most 10 people, so add a team or remove players."
-                            .formatted(size));
-        }
-        // Any team already over the size (only possible from manual edits) is caught by the slot check.
-        tournament.setRosterSize(size);
+        int size = Math.ceilDiv(seated + waiting, roster.size());
+        // A team already holding more people than that (only from manual edits) keeps them.
+        tournament.setRosterSize(Math.max(size, most));
         tournaments.saveAndFlush(tournament);
     }
 
-    private void requireSlotsMatchPool(Auction auction, Tournament tournament, List<Team> roster) {
-        // Unsold players are still waiting for a slot, so they count towards the pool.
+    /** Every queued player needs somewhere to go. Only fails if teams were changed by hand. */
+    private void requireRoomForEveryone(Auction auction, Tournament tournament, List<Team> roster) {
         int waiting = remainingLots(auction.getId()).size();
         int slots = openSlots(tournament).size();
-        if (waiting == slots) {
-            return;
+        if (waiting > slots) {
+            throw new BadRequestException(
+                    "%d player(s) for only %d open slot(s) across %d team(s). Drop %d or add a team."
+                            .formatted(waiting, slots, roster.size(), waiting - slots));
         }
-        throw new BadRequestException(waiting < slots
-                ? "%d player(s) for %d open slot(s) across %d team(s). Queue %d more."
-                        .formatted(waiting, slots, roster.size(), slots - waiting)
-                : "%d player(s) for only %d open slot(s) across %d team(s). Drop %d or add a team."
-                        .formatted(waiting, slots, roster.size(), waiting - slots));
     }
 
     private Auction require(Long auctionId) {
@@ -810,7 +633,6 @@ public class AuctionService {
                 auction.getId(),
                 auction.getStatus(),
                 currentLot(auction).map(l -> mapper.toLotView(l, auction.getTournament())).orElse(null),
-                null,
                 null,
                 mapper.toTeamViews(auction.getTournament()),
                 note,

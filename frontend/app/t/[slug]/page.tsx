@@ -76,6 +76,9 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
   const allPlayers = profiles ?? [];
   // Rosters list profiles and teams name their captain by user, so match the two up.
   const captainUserIds = new Set(roster.map((team) => team.captainUserId));
+  // Captains (and anyone already drafted) have a team; there's nothing for them to sign up for.
+  const onATeam = Boolean(me && (captainUserIds.has(me.userId)
+    || (myProfile && roster.some((team) => team.roster.some((m) => m.profileId === myProfile.id)))));
   const captainProfileIds = new Set(
     allPlayers.filter((p) => captainUserIds.has(p.userId)).map((p) => p.id),
   );
@@ -192,7 +195,7 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
       </section>
 
       <section className="pt-12">
-        {tournament.status === "REGISTRATION" ? (
+        {tournament.status === "REGISTRATION" && !onATeam ? (
           <div className="mb-8">
             <SignUp
               tournament={tournament}
@@ -217,9 +220,11 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
             title={isAdmin ? "No players yet" : "Nobody has signed up yet"}
             detail={isAdmin
               ? "Players appear here once they sign in and create a profile."
-              : tournament.status === "REGISTRATION"
-                ? "Sign up above to be the first in the queue."
-                : "Sign-ups are not open for this tournament."}
+              : tournament.status !== "REGISTRATION"
+                ? "Sign-ups are not open for this tournament."
+                : onATeam
+                  ? "Players who sign up will appear here."
+                  : "Sign up above to be the first in the queue."}
           />
         ) : (
           <DraftPool

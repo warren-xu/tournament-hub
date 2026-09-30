@@ -18,13 +18,15 @@ function toLocalInput(iso: string | null): string {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
-/** How the queue splits across the teams, or what's needed to make it split evenly. */
+/** The team size the draft will use if it starts now: everyone split across the teams, rounded up. */
 function splitCopy(teams: number, seated: number, queued: number): string {
   if (teams < 2) return "Add at least two teams.";
   const people = seated + queued;
-  const over = people % teams;
-  if (over === 0) return `Teams of ${people / teams}, captains included.`;
-  return `${people} people don't split across ${teams} teams: queue ${teams - over} more or remove ${over}.`;
+  const size = Math.ceil(people / teams);
+  const short = size * teams - people;
+  return short === 0
+    ? `Teams of ${size}, captains included.`
+    : `Teams of ${size}, captains included; ${short} ${short === 1 ? "team" : "teams"} a player short.`;
 }
 
 /**

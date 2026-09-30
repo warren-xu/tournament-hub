@@ -32,8 +32,9 @@ public final class AuctionDtos {
     }
 
     /**
-     * While the lot is OPEN every amount is withheld: the room sees who has locked in and
-     * nothing else. {@code winningBid} and the winner are filled in by the reveal.
+     * A player up for (or done with) live bidding. While OPEN, {@code winningBid} and the
+     * winning team are the current price and who holds it - the nominating team at 0 until
+     * someone bids; once closed they're the result.
      */
     public record LotView(
             Long lotId,
@@ -43,10 +44,8 @@ public final class AuctionDtos {
             int winningBid,
             Long winningTeamId,
             String winningTeamName,
+            /** The lowest bid accepted right now: one over the current price. */
             int minBid,
-            List<Long> lockedInTeamIds,
-            int captainsExpected,
-            boolean randomlyAssigned,
             Instant endsAt,
             long version
     ) {
@@ -89,10 +88,8 @@ public final class AuctionDtos {
             AuctionStatus status,
             LotView currentLot,
             List<TeamView> teams,
-            /** Revealed only once the lot has closed; empty while bidding is open. */
+            /** Bids on the player up now, newest first; empty between players. */
             List<BidView> recentBids,
-            /** The viewer's own sealed bid on the open lot, which is theirs to see. */
-            Integer yourBid,
             int pendingLots,
             /** The team whose captain nominates next, or null outside a running draft. */
             Long turnTeamId,
@@ -109,30 +106,26 @@ public final class AuctionDtos {
             AuctionStatus status,
             LotView lot,
             BidView bid,
-            /** Every captain's sealed bid, sent once - with the LOT_CLOSED reveal. */
-            List<BidView> reveal,
             List<TeamView> teams,
             String note,
             Instant serverTime
     ) {
         public enum Type {
             LOT_OPENED,
-            /** A captain has committed an amount. The amount itself is not in this message. */
-            BID_LOCKED,
+            /** A new high bid: {@code lot} carries the new price, leader and deadline. */
+            BID_PLACED,
             LOT_CLOSED,
-            /** A leftover player dealt to a team once every captain is out of credits. */
-            RANDOM_ASSIGNED,
             STATUS_CHANGED,
             SNAPSHOT
         }
 
         public static AuctionMessage of(Type type, Long auctionId) {
             return new AuctionMessage(
-                    type, auctionId, null, null, null, null, null, null, Instant.now());
+                    type, auctionId, null, null, null, null, null, Instant.now());
         }
     }
 
-    /** Sent by a captain over {@code /app/auction/{id}/bid}. Resubmitting replaces it. */
+    /** Sent by a captain over {@code /app/auction/{id}/bid}: a new high bid. */
     public record PlaceBidCommand(Long lotId, Integer amount) {
     }
 

@@ -89,10 +89,10 @@ public class TournamentService {
         Tournament tournament = newTournament(request, createdByUserId);
         tournament.setStatus(TournamentStatus.REGISTRATION);
         tournament = tournaments.save(tournament);
-        int teamNumber = 0;
         for (Long id : captainIds) {
             PlayerProfile captain = captains.get(id);
-            String teamName = "Team " + (++teamNumber) + " · " + captain.getUser().getUsername();
+            // Named after the captain to start with; captains and admins can rename it.
+            String teamName = captain.getUser().getUsername();
             Team team = teams.save(new Team(tournament, teamName.substring(0, Math.min(teamName.length(), 128)),
                     null, captain.getUser().getId()));
             members.save(new TeamMember(team, captain, 0));

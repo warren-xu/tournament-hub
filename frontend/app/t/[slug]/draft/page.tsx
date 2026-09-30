@@ -74,7 +74,7 @@ export default async function DraftPage(props: PageProps<"/t/[slug]/draft">) {
         <div className="text-right">
           <Eyebrow>Rules</Eyebrow>
           <p className="tabular mt-1 text-sm text-muted">
-            {tournament.creditBudget} credits · {tournament.rosterSize} per roster
+            {tournament.creditBudget} credits
           </p>
         </div>
       </div>
@@ -86,7 +86,6 @@ export default async function DraftPage(props: PageProps<"/t/[slug]/draft">) {
         profiles={profiles ?? []}
         agents={agents ?? []}
         roles={roles}
-        rosterSize={tournament.rosterSize}
         creditBudget={tournament.creditBudget}
       />
     </div>

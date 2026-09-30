@@ -4,7 +4,6 @@ import com.warren.warrenament.auction.AuctionDtos.BidView;
 import com.warren.warrenament.auction.AuctionDtos.AuctionSnapshot;
 import com.warren.warrenament.auction.AuctionDtos.LotView;
 import com.warren.warrenament.auction.AuctionDtos.PlayerSummary;
-import com.warren.warrenament.auction.AuctionDtos.PlayerSummary;
 import com.warren.warrenament.auction.AuctionDtos.RosterEntry;
 import com.warren.warrenament.auction.AuctionDtos.TeamView;
 import com.warren.warrenament.auth.UserRepository;
@@ -57,45 +56,26 @@ public class AuctionViewMapper {
                 lot.getWinningBid(),
                 lot.getWinningTeamId(),
                 winnerName,
-                tournament.getMinBid(),
-                lockedInTeamIds(lot),
-                captainsExpected(tournament),
-                // Dealt out at the end, not won: the winner never bid on it. (Price alone can't
-                // tell, since a winning bid can be 0.)
-                lot.getStatus() == LotStatus.SOLD && bidsThisRound(lot).stream()
-                        .noneMatch(bid -> bid.getTeamId().equals(lot.getWinningTeamId())),
+                nextMinimum(lot, tournament),
                 lot.getEndsAt(),
                 lot.getVersion());
     }
 
     /**
-     * Which teams have a sealed bid on this lot. Who has committed is public - the room
-     * wants to see the last captain hesitating - while what they committed is not.
+     * The lowest bid that would take the lead: one credit over the current price, or the
+     * tournament's floor while nobody holds the player (no nominating team to start them).
      */
-    public List<Long> lockedInTeamIds(Lot lot) {
-        return bidsThisRound(lot).stream()
-                .map(Bid::getTeamId)
-                .distinct()
-                .toList();
+    public int nextMinimum(Lot lot, Tournament tournament) {
+        return lot.getWinningTeamId() == null
+                ? Math.max(1, tournament.getMinBid())
+                : lot.getWinningBid() + 1;
     }
 
-    /** A lot put up again after an undo starts clean; earlier rounds stay in the audit trail. */
+    /** A lot put up again (it went unsold) starts clean; earlier rounds stay in the audit trail. */
     public List<Bid> bidsThisRound(Lot lot) {
         return lot.getOpenedAt() == null
                 ? bids.findByLotIdOrderByIdAsc(lot.getId())
                 : bids.findByLotIdAndCreatedAtGreaterThanEqualOrderByIdAsc(lot.getId(), lot.getOpenedAt());
-    }
-
-    /** Captains who could still bid, and so are worth waiting for before a reveal. */
-    public int captainsExpected(Tournament tournament) {
-        Map<Long, Integer> rosterCounts = rosterCounts(tournament.getId());
-        return (int) teams.findByTournamentId(tournament.getId()).stream()
-                .filter(team -> BudgetRules.canBid(
-                        team.getRemainingCredits(),
-                        rosterCounts.getOrDefault(team.getId(), 0),
-                        tournament.getRosterSize(),
-                        tournament.getMinBid()))
-                .count();
     }
 
     public Map<Long, Integer> rosterCounts(Long tournamentId) {
@@ -151,24 +131,13 @@ public class AuctionViewMapper {
     }
 
     public AuctionSnapshot toSnapshot(Auction auction) {
-        return toSnapshot(auction, null);
-    }
-
-    /**
-     * @param viewerUserId the captain asking, so their own sealed bid can be returned to
-     *                     them - a refresh mid-lot should not lose what they locked in
-     */
-    public AuctionSnapshot toSnapshot(Auction auction, Long viewerUserId) {
         Tournament tournament = auction.getTournament();
         Lot currentLot = auction.getCurrentLotId() == null ? null
                 : lots.findById(auction.getCurrentLotId()).orElse(null);
 
         Map<Long, String> teamNames = teamNames(tournament.getId());
 
-        // Amounts stay sealed until the lot closes; an open lot reveals nothing.
-        List<BidView> recentBids = currentLot == null || currentLot.getStatus() == LotStatus.OPEN
-                ? List.of()
-                : revealFor(currentLot, teamNames);
+        List<BidView> recentBids = currentLot == null ? List.of() : bidHistory(currentLot, teamNames);
 
         // Players still to place. An unsold player is still to come, not done with.
         int pending = (int) lots.findByAuctionIdOrderBySeqAsc(auction.getId()).stream()
@@ -182,7 +151,6 @@ public class AuctionViewMapper {
                 toLotView(currentLot, tournament),
                 toTeamViews(tournament),
                 recentBids,
-                yourBid(currentLot, tournament.getId(), viewerUserId),
                 pending,
                 auction.getTurnTeamId(),
                 auction.getPickLotId() == null ? null : lots.findById(auction.getPickLotId())
@@ -190,28 +158,12 @@ public class AuctionViewMapper {
                 Instant.now());
     }
 
-    /** Each team's final sealed bid on a closed lot, biggest first. */
-    public List<BidView> revealFor(Lot lot, Map<Long, String> teamNames) {
-        Map<Long, Bid> lastPerTeam = new java.util.LinkedHashMap<>();
-        for (Bid bid : bidsThisRound(lot)) {
-            lastPerTeam.put(bid.getTeamId(), bid);
-        }
-        return lastPerTeam.values().stream()
-                .map(bid -> toBidView(bid, teamNames))
-                .sorted((a, b) -> Integer.compare(b.amount(), a.amount()))
-                .toList();
-    }
-
-    private Integer yourBid(Lot lot, Long tournamentId, Long viewerUserId) {
-        if (lot == null || viewerUserId == null) {
-            return null;
-        }
-        return teams.findByTournamentIdAndCaptainUserId(tournamentId, viewerUserId)
-                .flatMap(team -> bidsThisRound(lot).stream()
-                        .filter(bid -> bid.getTeamId().equals(team.getId()))
-                        .reduce((first, second) -> second))
-                .map(Bid::getAmount)
-                .orElse(null);
+    /** This round's bids on a lot, newest (and so highest) first. */
+    public List<BidView> bidHistory(Lot lot, Map<Long, String> teamNames) {
+        List<BidView> history = new java.util.ArrayList<>(
+                bidsThisRound(lot).stream().map(bid -> toBidView(bid, teamNames)).toList());
+        java.util.Collections.reverse(history);
+        return history;
     }
 
     public Map<Long, String> teamNames(Long tournamentId) {

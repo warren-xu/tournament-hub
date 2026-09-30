@@ -142,7 +142,7 @@ export function SignUp({
             <div className="space-y-5 px-6 py-6">
               <ul className="space-y-2 text-sm leading-relaxed text-muted">
                 <li>You go straight into the auction queue. No approval needed.</li>
-                <li>Captains place sealed bids for you. Team size is set when the draft starts, from how many people sign up.</li>
+                <li>Captains bid for you live: the highest bid when the clock runs out wins. Team size is set when the draft starts, from how many people sign up.</li>
                 <li>Changed your mind? Leave any time before the draft starts.</li>
               </ul>
 

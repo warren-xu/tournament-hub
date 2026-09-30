@@ -16,6 +16,4 @@ public interface TeamMemberRepository extends JpaRepository<TeamMember, Long> {
 
     boolean existsByPlayerProfileId(Long playerProfileId);
 
-    /** Most recent acquisition in the tournament - the sale an admin undo reverses. */
-    java.util.Optional<TeamMember> findFirstByTournamentIdOrderByIdDesc(Long tournamentId);
 }
