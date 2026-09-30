@@ -75,9 +75,7 @@ export default async function HomePage() {
         <dl className="grid grid-cols-2 gap-px self-start border border-line bg-line lg:mt-14">
           {[
             { label: "Tournaments", value: list.length },
-            { label: "Sign-ups open", value: open },
             { label: "Players", value: profiles?.length ?? 0 },
-            { label: "Drafts in progress", value: list.filter((t) => t.status === "DRAFTING").length },
           ].map((stat) => (
             <div key={stat.label} className="bg-panel px-5 py-6">
               <dt className="eyebrow">{stat.label}</dt>
