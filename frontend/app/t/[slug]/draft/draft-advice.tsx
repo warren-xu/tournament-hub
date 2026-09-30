@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { PlayerName } from "./player-name";
-import { RankBadge, Tag } from "@/components/ui";
+import { NO_FORM_RESTORE, RankBadge, Tag } from "@/components/ui";
 import { api, ApiCallError } from "@/lib/client-api";
 import { playLockIn, useSoundsEnabled } from "@/lib/sounds";
 import { CORE_ROLES, rankCandidates, roleCoverage, type DraftPlayer } from "@/lib/draft-advice";
@@ -22,6 +22,7 @@ export function DraftAdvice({
   ranks,
   roles,
   onSnapshot,
+  holding = false,
 }: {
   snapshot: AuctionSnapshot;
   team: AuctionTeamView;
@@ -31,6 +32,8 @@ export function DraftAdvice({
   roles: Record<string, RoleInfo>;
   /** Applies the room state returned by a nomination. */
   onSnapshot: (snapshot: AuctionSnapshot) => void;
+  /** The room is pausing on the last result: no nominating until it's over. */
+  holding?: boolean;
 }) {
   const [queue, setQueue] = useState<LotView[]>([]);
   /** The needed role being hovered or focused, whose description opens under the list. */
@@ -46,7 +49,7 @@ export function DraftAdvice({
   const lot = snapshot.currentLot;
   const lotOpen = lot !== null;
   // The captain's turn to nominate: between rounds, while the draft is running.
-  const myTurn = snapshot.status === "LIVE" && !lotOpen && snapshot.turnTeamId === team.teamId;
+  const myTurn = snapshot.status === "LIVE" && !lotOpen && snapshot.turnTeamId === team.teamId && !holding;
   const [picking, setPicking] = useState<number | null>(null);
   const soundOn = useSoundsEnabled();
   const [pickError, setPickError] = useState<string | null>(null);
@@ -178,6 +181,7 @@ export function DraftAdvice({
                 {myTurn ? (
                   <button type="button" onClick={() => void nominate(a.player.profileId)}
                     disabled={picking !== null || picked}
+                    {...NO_FORM_RESTORE}
                     className="nominate-btn" data-picked={picked || undefined}>
                     {picking === a.player.profileId ? "…" : picked ? "Picked" : "Nominate"}
                   </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { NO_FORM_RESTORE } from "@/components/ui";
 import { api, ApiCallError } from "@/lib/client-api";
 import type { AuctionSnapshot, LotView } from "@/lib/types";
 
@@ -128,6 +129,7 @@ export function AdminRail({
           <button
             onClick={() => nominate(null)}
             disabled={busy !== null || snapshot.status !== "LIVE" || lotOpen || snapshot.pendingLots === 0}
+            {...NO_FORM_RESTORE}
             className="corner-cut-sm w-full bg-accent px-4 py-2.5 font-display text-sm font-semibold uppercase tracking-wider text-white transition-colors hover:bg-accent-deep disabled:cursor-not-allowed disabled:bg-raise disabled:text-dim"
           >
             {busy === "nominate"
@@ -149,6 +151,7 @@ export function AdminRail({
                   <button
                     onClick={() => nominate(lot.player.profileId)}
                     disabled={busy !== null || snapshot.status !== "LIVE" || lotOpen}
+                    {...NO_FORM_RESTORE}
                     className="flex w-full items-baseline justify-between gap-3 border-b border-line-soft px-3 py-2 text-left text-sm transition-colors hover:bg-raise disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <span className="truncate text-bone">
@@ -194,6 +197,7 @@ function Control({
     <button
       onClick={onClick}
       disabled={busy || disabled}
+      {...NO_FORM_RESTORE}
       className={`px-3 py-1.5 font-display text-xs font-semibold uppercase tracking-wider transition-colors disabled:opacity-40 ${
         primary
           ? "bg-accent text-white hover:bg-accent-deep"

@@ -76,7 +76,10 @@ public class TeamService {
 
         auctions.requireNotStarted(tournamentId);
 
-        Team team = teams.save(new Team(tournament, request.name(), request.logoUrl(), captainUserId));
+        Team created = new Team(tournament, request.name(), request.logoUrl(), captainUserId);
+        // A team added later nominates after the ones already there.
+        created.setDraftOrder(teams.maxDraftOrder(tournamentId) + 1);
+        Team team = teams.save(created);
         // Captains lead their own team rather than being drafted, as when a tournament is
         // created with picked captains: seat them and take them out of the pool.
         profiles.findByUserId(captainUserId).ifPresent(captain -> {
@@ -89,6 +92,28 @@ public class TeamService {
                     .ifPresent(registrations::delete);
         });
         return TeamView.of(team, members.findByTeamId(team.getId()));
+    }
+
+    /**
+     * Sets the order teams nominate in (and are listed in): the given ids, first to last.
+     * Only before the draft starts, so turns never shift mid-draft.
+     */
+    @Transactional
+    public List<TeamView> reorder(Long tournamentId, List<Long> teamIds) {
+        auctions.requireNotStarted(tournamentId);
+        List<Team> current = teams.findByTournamentId(tournamentId);
+        if (teamIds == null || teamIds.size() != current.size()
+                || !new java.util.HashSet<>(teamIds).equals(
+                        current.stream().map(Team::getId).collect(java.util.stream.Collectors.toSet()))) {
+            throw new BadRequestException("List every team in this tournament exactly once.");
+        }
+        java.util.Map<Long, Team> byId = current.stream()
+                .collect(java.util.stream.Collectors.toMap(Team::getId, t -> t));
+        for (int i = 0; i < teamIds.size(); i++) {
+            byId.get(teamIds.get(i)).setDraftOrder(i + 1);
+        }
+        teams.saveAll(current);
+        return findByTournament(tournamentId);
     }
 
     @Transactional

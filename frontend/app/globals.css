@@ -111,7 +111,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .live-dot, .pool-hint, .turn-banner, .turn-banner::before, .turn-dot, .turn-toast, .status-dot {
+  .live-dot, .pool-hint, .turn-banner, .turn-banner::before, .turn-dot, .turn-toast, .status-dot, .up-next-spinner {
     animation: none;
   }
   *, *::before, *::after {
@@ -198,6 +198,10 @@
 .turn-toast .turn-dot { background: var(--color-bone); }
 .turn-toast-close { display: grid; place-items: center; width: 32px; height: 32px; margin-left: auto; color: var(--color-bone); cursor: pointer; }
 .turn-toast-close:focus-visible { outline: 2px solid var(--color-bone); }
+/* The draft room's "up next" wait between a result and the next nomination. */
+.up-next-spinner { display: inline-block; flex-shrink: 0; width: 18px; height: 18px; border: 2px solid var(--color-line); border-top-color: var(--color-accent); border-radius: 50%; animation: up-next-spin 0.8s linear infinite; }
+@keyframes up-next-spin { to { transform: rotate(360deg); } }
+
 /* The tournaments list's status marker; a live draft pulses like the "your turn" dot. */
 .status-dot { display: inline-block; flex-shrink: 0; width: 10px; height: 10px; border-radius: 50%; }
 .status-dot[data-live] { animation: turn-pulse 1.2s ease-in-out infinite; }

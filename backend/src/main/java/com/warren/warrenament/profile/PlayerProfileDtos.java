@@ -29,7 +29,8 @@ public final class PlayerProfileDtos {
             String peakRank,
             String bannerUrl,
             Integer accentColor,
-            Instant updatedAt
+            Instant updatedAt,
+            NerfTier nerfTier
     ) {
         public static ProfileView of(PlayerProfile p) {
             return new ProfileView(
@@ -48,8 +49,13 @@ public final class PlayerProfileDtos {
                     p.getPeakRank(),
                     p.getUser().getBannerUrl(),
                     p.getUser().getAccentColor(),
-                    p.getUpdatedAt());
+                    p.getUpdatedAt(),
+                    p.getNerfTier());
         }
+    }
+
+    /** A null tier clears the nerf. */
+    public record SetNerfTierRequest(NerfTier tier) {
     }
 
     public record UpdateProfileRequest(

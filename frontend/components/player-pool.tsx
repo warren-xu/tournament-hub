@@ -6,6 +6,7 @@ import { RankPortrait } from "@/components/rank-portrait";
 import { buttonClass } from "@/components/ui";
 import { SuggestionsToggle } from "@/components/suggestions-toggle";
 import { DeletePlayer } from "@/app/players/delete-player";
+import { NerfTierPicker } from "@/app/players/nerf-tier-picker";
 import { createCollider, confine, poolHeight, stepPool, POOL_BLOCK, type PoolBody } from "@/lib/pool-physics";
 import { agentRoleColor, CARD_SQUARE, rankStyle } from "@/lib/rank-style";
 import { useSuggestionsEnabled } from "@/lib/suggestions";
@@ -244,7 +245,12 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
           const active = document.activeElement;
           if (openedByPointer.current && active instanceof HTMLElement && active.classList.contains("pool-tile")) active.blur();
         }}
-        footer={isAdmin && selected ? <DeletePlayer profileId={selected.id} username={selected.username} /> : null} />
+        footer={isAdmin && selected ? (
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <NerfTierPicker key={selected.id} profileId={selected.id} username={selected.username} tier={selected.nerfTier} />
+            <DeletePlayer profileId={selected.id} username={selected.username} />
+          </div>
+        ) : null} />
     </section>
   );
 }

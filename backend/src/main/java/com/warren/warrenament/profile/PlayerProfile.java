@@ -5,6 +5,8 @@ import jakarta.persistence.CascadeType;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -62,6 +64,11 @@ public class PlayerProfile {
     private PlayerCard playerCard;
 
     private String bio;
+
+    /** Set by an admin; null means no nerf. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "nerf_tier")
+    private NerfTier nerfTier;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(

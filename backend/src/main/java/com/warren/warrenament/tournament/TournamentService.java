@@ -89,12 +89,16 @@ public class TournamentService {
         Tournament tournament = newTournament(request, createdByUserId);
         tournament.setStatus(TournamentStatus.REGISTRATION);
         tournament = tournaments.save(tournament);
+        int order = 0;
         for (Long id : captainIds) {
             PlayerProfile captain = captains.get(id);
             // Named after the captain to start with; captains and admins can rename it.
             String teamName = captain.getUser().getUsername();
-            Team team = teams.save(new Team(tournament, teamName.substring(0, Math.min(teamName.length(), 128)),
-                    null, captain.getUser().getId()));
+            Team fresh = new Team(tournament, teamName.substring(0, Math.min(teamName.length(), 128)),
+                    null, captain.getUser().getId());
+            // Captains nominate in the order they were chosen.
+            fresh.setDraftOrder(++order);
+            Team team = teams.save(fresh);
             members.save(new TeamMember(team, captain, 0));
         }
         auctionService.createForTournament(tournament.getId());

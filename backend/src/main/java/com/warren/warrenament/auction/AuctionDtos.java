@@ -1,5 +1,6 @@
 package com.warren.warrenament.auction;
 
+import com.warren.warrenament.profile.NerfTier;
 import com.warren.warrenament.profile.PlayerProfile;
 
 import java.time.Instant;
@@ -19,15 +20,17 @@ public final class AuctionDtos {
             String primaryRole,
             String secondaryRole
     ) {
+        /** A Tier 1 player can only play Viper or Sage, so the auction treats them as a Sentinel with Controller second. */
         public static PlayerSummary of(PlayerProfile p) {
+            boolean tier1 = p.getNerfTier() != null && p.getNerfTier().limitsAgents();
             return new PlayerSummary(
                     p.getId(),
                     p.getUser().getUsername(),
                     p.getUser().getAvatarUrl(),
                     p.getRiotId(),
                     p.getCurrentRank(),
-                    p.getPrimaryRole(),
-                    p.getSecondaryRole());
+                    tier1 ? NerfTier.TIER_1_PRIMARY_ROLE : p.getPrimaryRole(),
+                    tier1 ? NerfTier.TIER_1_SECONDARY_ROLE : p.getSecondaryRole());
         }
     }
 

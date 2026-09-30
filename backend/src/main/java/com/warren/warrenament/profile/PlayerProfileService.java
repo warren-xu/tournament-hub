@@ -107,6 +107,19 @@ public class PlayerProfileService {
         return ProfileView.of(profiles.save(profile));
     }
 
+    /**
+     * An admin sets or clears a player's nerf. It changes nothing else on their profile:
+     * the auction reads it (a Tier 1 player counts as a Sentinel with Controller second)
+     * and the draft room labels it.
+     */
+    @Transactional
+    public ProfileView setNerfTier(Long profileId, NerfTier tier) {
+        PlayerProfile profile = profiles.findById(profileId)
+                .orElseThrow(() -> NotFoundException.of("Profile", profileId));
+        profile.setNerfTier(tier);
+        return ProfileView.of(profiles.save(profile));
+    }
+
     /** Peak rank comes from Riot's data via the import, never from the profile form. */
     @Transactional
     public void setPeakRank(Long userId, String peakRank) {

@@ -4,6 +4,7 @@ import { CalendarLinks } from "./calendar-links";
 import { DraftPool } from "./draft-pool";
 import { TeamName } from "./team-name";
 import { DeleteTeam } from "./delete-team";
+import { TeamOrder } from "./team-order";
 import { AuctionSetup } from "./auction-setup";
 import {
   EmptyState,
@@ -28,6 +29,13 @@ import {
   getTournamentBySlug,
 } from "@/lib/server-api";
 import type { TournamentStatus } from "@/lib/types";
+
+/** 1 → "1st", 2 → "2nd", 11 → "11th". */
+function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th";
+  return `${n}${suffix}`;
+}
 
 const STATUS_COPY: Record<TournamentStatus, string> = {
   DRAFT: "Setting up",
@@ -149,10 +157,17 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
           />
         ) : (
           <ul className="grid gap-px border border-line bg-line md:grid-cols-2 xl:grid-cols-3">
-            {roster.map((team) => {
+            {roster.map((team, index) => {
               return (
                 <li key={team.id}>
                   <article className="flex h-full flex-col bg-panel p-5">
+                    {/* Teams are listed in the order they nominate in. */}
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <p className="eyebrow">Nominates {ordinal(index + 1)}</p>
+                      {isAdmin && settingUp && roster.length > 1 ? (
+                        <TeamOrder tournamentId={tournament.id} teamIds={roster.map((t) => t.id)} index={index} name={team.name} />
+                      ) : null}
+                    </div>
                     <div className="flex items-baseline justify-between gap-3">
                       <TeamName
                         teamId={team.id}

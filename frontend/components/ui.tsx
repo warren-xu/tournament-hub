@@ -271,3 +271,11 @@ export function AgentChip({
 export function agentIndex(agents: AgentView[]): Map<string, AgentView> {
   return new Map(agents.map((a) => [a.name.toLowerCase(), a]));
 }
+
+/**
+ * Spread onto any control whose disabled state changes. Firefox restores a control's
+ * enabled state on reload unless told not to, which leaves the DOM disagreeing with React
+ * at hydration. React's types omit autoComplete on buttons, though the attribute is valid
+ * there, hence the spread.
+ */
+export const NO_FORM_RESTORE = { autoComplete: "off" };

@@ -115,6 +115,7 @@ The frontend deploys separately with `npx vercel --prod` from `frontend/`.
 | `GET PUT` | `/api/profiles/me` | signed in |
 | `POST` | `/api/profiles/me/import` | signed in — suggests fields from a Riot ID's recent competitive games via HenrikDev; saves only peak rank, which `PUT /me` never sets |
 | `DELETE` | `/api/profiles/{id}` | admin — hard delete, for clearing test players |
+| `PUT` | `/api/profiles/{id}/nerf` | admin — `{tier}`: `TIER_1` (Viper or Sage only, Warden max; the auction treats them as Sentinel / Controller), `TIER_2` (Warden max), or `null` |
 | `GET` | `/api/profiles`, `/api/profiles/{id}` | anyone |
 | `POST` | `/api/tournaments` | admin |
 | `PUT` | `/api/tournaments/{id}/status` | admin |
@@ -124,6 +125,7 @@ The frontend deploys separately with `npx vercel --prod` from `frontend/`.
 | `POST` | `/api/tournaments/{id}/queue` | admin — add `{playerProfileIds}` to the queue |
 | `DELETE` | `/api/tournaments/{id}/queue/{profileId}` | admin — take a player back out of the queue |
 | `GET POST` | `/api/tournaments/{id}/teams` | anyone / signed in |
+| `PUT` | `/api/tournaments/{id}/teams/order` | admin — `{teamIds}` first to last: the order teams nominate in and are listed in; before the draft starts |
 | `PUT` | `/api/teams/{id}` | that team's captain, or admin — rename |
 | `DELETE` | `/api/teams/{id}` | admin — before the draft starts; the captain's seat goes with it |
 | `GET` | `/api/agents` | anyone — the picker roster (`?includeRetired=true` for all) |

@@ -40,6 +40,10 @@ public class Team {
     @Column(name = "captain_user_id", nullable = false)
     private Long captainUserId;
 
+    /** Turn order for nominating (1 goes first), and the order teams are listed in. */
+    @Column(name = "draft_order", nullable = false)
+    private int draftOrder;
+
     /** Decremented when a lot is won. The source of truth for what a captain can still spend. */
     @Column(name = "remaining_credits", nullable = false)
     private int remainingCredits;

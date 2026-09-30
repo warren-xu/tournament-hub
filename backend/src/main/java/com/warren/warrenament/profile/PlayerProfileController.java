@@ -2,6 +2,7 @@ package com.warren.warrenament.profile;
 
 import com.warren.warrenament.auth.AppUser;
 import com.warren.warrenament.profile.PlayerProfileDtos.ProfileView;
+import com.warren.warrenament.profile.PlayerProfileDtos.SetNerfTierRequest;
 import com.warren.warrenament.profile.PlayerProfileDtos.UpdateProfileRequest;
 import com.warren.warrenament.profile.ProfileImportService.ImportRequest;
 import com.warren.warrenament.profile.ProfileImportService.ImportView;
@@ -61,6 +62,13 @@ public class PlayerProfileController {
             service.setPeakRank(user.userId(), result.peakRank());
         }
         return result;
+    }
+
+    /** Admins only: set a player's nerf tier, or clear it with {@code {"tier": null}}. */
+    @PutMapping("/{id}/nerf")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ProfileView setNerfTier(@PathVariable Long id, @RequestBody SetNerfTierRequest request) {
+        return service.setNerfTier(id, request.tier());
     }
 
     @GetMapping("/{id}")

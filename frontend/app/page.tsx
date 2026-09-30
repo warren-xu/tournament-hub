@@ -71,7 +71,7 @@ export default async function HomePage() {
             <LinkButton href="#tournaments" tone="primary">
               Explore tournaments
             </LinkButton>
-            <LinkButton href="/profile">Join as a player</LinkButton>
+            <LinkButton href="/profile">Customize your profile</LinkButton>
           </div>
         </div>
 

@@ -3,6 +3,7 @@ package com.warren.warrenament.team;
 import com.warren.warrenament.auth.AppUser;
 import com.warren.warrenament.team.TeamDtos.AssignCaptainRequest;
 import com.warren.warrenament.team.TeamDtos.CreateTeamRequest;
+import com.warren.warrenament.team.TeamDtos.ReorderTeamsRequest;
 import com.warren.warrenament.team.TeamDtos.TeamView;
 import com.warren.warrenament.team.TeamDtos.UpdateTeamRequest;
 import jakarta.validation.Valid;
@@ -40,6 +41,14 @@ public class TeamController {
                            @Valid @RequestBody CreateTeamRequest request,
                            @AuthenticationPrincipal AppUser user) {
         return service.create(tournamentId, request, user.userId(), user.isAdmin());
+    }
+
+    /** Admins only, before the draft starts: the order teams nominate in, first to last. */
+    @PutMapping("/tournaments/{tournamentId}/teams/order")
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<TeamView> reorder(@PathVariable Long tournamentId,
+                                  @Valid @RequestBody ReorderTeamsRequest request) {
+        return service.reorder(tournamentId, request.teamIds());
     }
 
     @GetMapping("/teams/{teamId}")

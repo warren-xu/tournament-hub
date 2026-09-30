@@ -71,7 +71,9 @@ public class TestFixtures {
 
     @Transactional
     public Team team(Tournament tournament, String name, User captain) {
-        return teams.save(new Team(tournament, name, null, captain.getId()));
+        Team team = new Team(tournament, name, null, captain.getId());
+        team.setDraftOrder(teams.maxDraftOrder(tournament.getId()) + 1);
+        return teams.save(team);
     }
 
     /** A player queued but not yet nominated. */

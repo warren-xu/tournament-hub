@@ -312,28 +312,29 @@ public class AuctionService {
     }
 
     /**
-     * Hands the nomination to the next team, in creation order (Team 1, 2 ... n, then round
-     * again), skipping teams whose roster is full. Clears any unused pick.
+     * Hands the nomination to the next team in draft order (1, 2 ... n, then round again),
+     * skipping teams whose roster is full. Clears any unused pick.
      */
     private void advanceTurn(Auction auction) {
         Tournament tournament = auction.getTournament();
         Map<Long, Integer> rosterCounts = mapper.rosterCounts(tournament.getId());
-        List<Team> withRoom = teams.findByTournamentId(tournament.getId()).stream()
-                .filter(t -> rosterCounts.getOrDefault(t.getId(), 0) < tournament.getRosterSize())
-                .sorted(java.util.Comparator.comparing(Team::getId))
-                .toList();
+        List<Team> order = teams.findByTournamentId(tournament.getId());
 
         auction.setPickLotId(null);
-        if (withRoom.isEmpty()) {
-            auction.setTurnTeamId(null);
-            return;
+        int start = -1;
+        for (int i = 0; i < order.size(); i++) {
+            if (order.get(i).getId().equals(auction.getTurnTeamId())) {
+                start = i;
+            }
         }
-        Long current = auction.getTurnTeamId();
-        Team next = withRoom.stream()
-                .filter(t -> current == null || t.getId() > current)
-                .findFirst()
-                .orElse(withRoom.getFirst());
-        auction.setTurnTeamId(next.getId());
+        for (int step = 1; step <= order.size(); step++) {
+            Team next = order.get(Math.floorMod(start + step, order.size()));
+            if (rosterCounts.getOrDefault(next.getId(), 0) < tournament.getRosterSize()) {
+                auction.setTurnTeamId(next.getId());
+                return;
+            }
+        }
+        auction.setTurnTeamId(null);
     }
 
     private AuctionSnapshot open(Auction auction, Lot lot) {

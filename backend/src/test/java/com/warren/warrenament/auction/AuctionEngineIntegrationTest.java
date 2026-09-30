@@ -10,6 +10,7 @@ import com.warren.warrenament.common.Exceptions.BidRejectedException;
 import com.warren.warrenament.profile.PlayerProfile;
 import com.warren.warrenament.team.Team;
 import com.warren.warrenament.team.TeamMember;
+import com.warren.warrenament.team.TeamDtos;
 import com.warren.warrenament.team.TeamMemberRepository;
 import com.warren.warrenament.team.TeamRepository;
 import com.warren.warrenament.tournament.Tournament;
@@ -48,6 +49,7 @@ class AuctionEngineIntegrationTest {
     @Autowired TeamMemberRepository teamMembers;
     @Autowired AuctionRepository auctions;
     @Autowired TournamentRepository tournaments;
+    @Autowired com.warren.warrenament.team.TeamService teamService;
 
     private record World(Tournament tournament, Auction auction, Lot lot, List<Team> teams,
                          List<User> captains) {
@@ -346,6 +348,38 @@ class AuctionEngineIntegrationTest {
         AuctionDtos.AuctionSnapshot second = auctionService.nominateNext(auction.getId());
         auctionService.closeLot(second.currentLot().lotId());
         assertThat(auctions.findById(auction.getId()).orElseThrow().getTurnTeamId()).isEqualTo(a.getId());
+    }
+
+    @Test
+    @DisplayName("nominating turns follow the admin's team order, then come back round")
+    void turnsFollowTheDraftOrder() {
+        Tournament tournament = fixtures.tournament(100, 3, 1);
+        Auction auction = fixtures.liveAuction(tournament, 30);
+        auction.setStatus(AuctionStatus.SETUP);
+        auctions.saveAndFlush(auction);
+        Team a = fixtures.team(tournament, "A", fixtures.user("orderA"));
+        Team b = fixtures.team(tournament, "B", fixtures.user("orderB"));
+        Team c = fixtures.team(tournament, "C", fixtures.user("orderC"));
+        for (int i = 0; i < 6; i++) {
+            fixtures.queuedLot(auction, fixtures.profile("ordered" + i));
+        }
+
+        teamService.reorder(tournament.getId(), List.of(c.getId(), a.getId(), b.getId()));
+        assertThat(teamService.findByTournament(tournament.getId()))
+                .extracting(TeamDtos.TeamView::id).containsExactly(c.getId(), a.getId(), b.getId());
+
+        assertThat(auctionService.start(auction.getId()).turnTeamId()).isEqualTo(c.getId());
+        List<Long> turns = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            AuctionSnapshot opened = auctionService.nominateNext(auction.getId());
+            auctionService.closeLot(opened.currentLot().lotId());
+            turns.add(auctions.findById(auction.getId()).orElseThrow().getTurnTeamId());
+        }
+        assertThat(turns).containsExactly(a.getId(), b.getId(), c.getId());
+
+        // Once the draft is running the order is fixed.
+        assertThatThrownBy(() -> teamService.reorder(tournament.getId(), List.of(a.getId(), b.getId(), c.getId())))
+                .isInstanceOf(BadRequestException.class);
     }
 
     @Test

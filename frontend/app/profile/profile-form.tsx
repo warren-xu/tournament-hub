@@ -5,7 +5,7 @@ import { PlayerCardPicker } from "@/components/player-card-picker";
 import { PlayerCard } from "@/components/player-card";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { buttonClass } from "@/components/ui";
+import { buttonClass, NO_FORM_RESTORE } from "@/components/ui";
 import { api, ApiCallError } from "@/lib/client-api";
 import type { AgentView, ProfileImport, ProfileView, RankView, PlayerCardView } from "@/lib/types";
 import {
@@ -395,13 +395,6 @@ export function ProfileForm({
     </form>
   );
 }
-
-/**
- * Firefox restores a button's enabled state on reload unless told not to, which leaves
- * the DOM disagreeing with React. React's types omit autoComplete on buttons, though the
- * attribute is valid there, hence the spread.
- */
-const NO_FORM_RESTORE = { autoComplete: "off" };
 
 const inputClass =
   "w-full border border-line bg-ink px-3 py-2.5 text-sm text-bone placeholder:text-dim focus:border-accent focus:outline-none";

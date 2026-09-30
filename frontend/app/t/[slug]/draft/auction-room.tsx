@@ -7,13 +7,15 @@ import { DraftAdvice } from "./draft-advice";
 import { PlayerName, ProfileOpener } from "./player-name";
 import { PlayerDialog } from "@/components/player-dialog";
 import { PlayerCard } from "@/components/player-card";
-import { Avatar, RankBadge, rankIndex, Tag } from "@/components/ui";
+import { asAuctionProfile } from "@/lib/nerfs";
+import { NerfLabel } from "@/components/nerf-label";
+import { Avatar, NO_FORM_RESTORE, RankBadge, rankIndex, Tag } from "@/components/ui";
 import {
   useAuction,
   type ConnectionState,
   type LastResult,
 } from "@/lib/use-auction";
-import { playLockIn, playRoundStart, playTick, playTimeUp, playTurnChime, setSoundsEnabled, unlockAudio, useSoundsEnabled } from "@/lib/sounds";
+import { playBidLevel, playRoundStart, playTick, playTimeUp, playTurnChime, playWon, setSoundsEnabled, unlockAudio, useSoundsEnabled } from "@/lib/sounds";
 import type { RoleInfo } from "@/lib/valorant-roles";
 import type {
   AgentView,
@@ -24,6 +26,9 @@ import type {
   ProfileView,
   RankView,
 } from "@/lib/types";
+
+/** How long each result stays up before the next captain can nominate. */
+const RESULT_PAUSE_MS = 5000;
 
 export function AuctionRoom({
   initial,
@@ -53,7 +58,11 @@ export function AuctionRoom({
   } = useAuction(initial.auctionId, initial);
 
   const rankLookup = rankIndex(ranks);
-  const profileLookup = useMemo(() => new Map(profiles.map((p) => [p.id, p])), [profiles]);
+  // Everything in the room sees players as the auction does (roles adjusted for nerfs).
+  const profileLookup = useMemo(
+    () => new Map(profiles.map((p) => [p.id, asAuctionProfile(p)])),
+    [profiles],
+  );
   const [openProfileId, setOpenProfileId] = useState<number | null>(null);
 
   const opener = useMemo(() => ({
@@ -64,9 +73,20 @@ export function AuctionRoom({
   const myTeam = me
     ? snapshot.teams.find((t) => t.captainUserId === me.userId)
     : undefined;
-  // A captain's nominating turn: between rounds, while the draft runs.
+  // After each result the room holds for a moment before the next nomination, so people
+  // can take in who went where. Starts only for results that land while you're here.
+  const resultLotId = lastResult?.lot.lotId ?? null;
+  // The last result whose pause has run out; any newer one is still being held.
+  const [releasedLotId, setReleasedLotId] = useState<number | null>(null);
+  const holding = resultLotId !== null && resultLotId !== releasedLotId;
+  useEffect(() => {
+    if (resultLotId === null) return;
+    const timer = setTimeout(() => setReleasedLotId(resultLotId), RESULT_PAUSE_MS);
+    return () => clearTimeout(timer);
+  }, [resultLotId]);
+  // A captain's nominating turn: between rounds, while the draft runs, once the pause is over.
   const myTurn = myTeam !== undefined && snapshot.status === "LIVE" && !lot
-    && snapshot.turnTeamId === myTeam.teamId;
+    && snapshot.turnTeamId === myTeam.teamId && !holding;
   const soundOn = useSoundsEnabled();
   // Bidding opening: a new round starting while you're here, not one already running at load.
   const openLotId = lot?.status === "OPEN" ? lot.lotId : null;
@@ -75,6 +95,31 @@ export function AuctionRoom({
     if (openLotId !== null && openLotId !== lastOpenLot.current && soundOn) playRoundStart();
     lastOpenLot.current = openLotId;
   }, [openLotId, soundOn]);
+
+  // Every bid on the player up plays the next level for the whole room. Counted from what
+  // the room has seen, so loading or resyncing mid-lot doesn't replay anything.
+  const bidCount = lot?.status === "OPEN" ? snapshot.recentBids.length : 0;
+  const lastBids = useRef<{ lotId: number | null; count: number }>({ lotId: openLotId, count: bidCount });
+  useEffect(() => {
+    const seen = lastBids.current;
+    if (openLotId !== null && openLotId === seen.lotId && bidCount > seen.count && soundOn) {
+      playBidLevel(bidCount);
+    }
+    lastBids.current = { lotId: openLotId, count: bidCount };
+  }, [openLotId, bidCount, soundOn]);
+
+  // A player settled while you're here: the captain who got them hears the win, everyone
+  // else the time-up. Early closes count too, and nothing replays on load.
+  const lastResultLot = useRef(resultLotId);
+  useEffect(() => {
+    if (resultLotId !== null && resultLotId !== lastResultLot.current && soundOn && lastResult) {
+      const mine = myTeam !== undefined && lastResult.lot.status === "SOLD"
+        && lastResult.lot.winningTeamId === myTeam.teamId;
+      if (mine) playWon();
+      else playTimeUp();
+    }
+    lastResultLot.current = resultLotId;
+  }, [resultLotId, lastResult, myTeam, soundOn]);
 
   // Browsers only allow audio after an interaction; the first one anywhere on the page
   // unlocks it for the whole visit, so the countdown and your-turn cues can play later.
@@ -152,11 +197,13 @@ export function AuctionRoom({
       ) : (
       <div className="grid items-start gap-5 lg:grid-cols-[1.7fr_1fr]">
         <div className="space-y-5">
-          <NominationStatus snapshot={snapshot} myTeamId={myTeam?.teamId} />
+          {holding
+            ? <UpNext snapshot={snapshot} myTeamId={myTeam?.teamId} />
+            : <NominationStatus snapshot={snapshot} myTeamId={myTeam?.teamId} />}
           {/* On your turn the list you nominate from comes straight under the banner. */}
           {myTeam && myTurn ? (
             <DraftAdvice snapshot={snapshot} team={myTeam} profiles={profileLookup} ranks={rankLookup} roles={roles}
-              onSnapshot={applySnapshot} />
+              onSnapshot={applySnapshot} holding={holding} />
           ) : null}
           <LotCard
             snapshot={snapshot}
@@ -173,16 +220,14 @@ export function AuctionRoom({
             me={me}
             myTeam={myTeam}
             rejection={rejection?.message ?? null}
-            onBid={(lotId, amount) => {
-              if (soundOn) playLockIn();
-              submitBid(lotId, amount);
-            }}
+            // The room's bid sound plays when the bid lands, for everyone, this captain included.
+            onBid={submitBid}
             offsetRef={clockOffset}
             connection={connection}
           /> : <p className="border-l-2 border-line bg-panel px-5 py-4 text-sm text-muted">Spectator view · Follow each pick and bid live. No sign-in needed.</p>}
           {myTeam && !myTurn ? (
             <DraftAdvice snapshot={snapshot} team={myTeam} profiles={profileLookup} ranks={rankLookup} roles={roles}
-              onSnapshot={applySnapshot} />
+              onSnapshot={applySnapshot} holding={holding} />
           ) : null}
         </div>
 
@@ -193,6 +238,7 @@ export function AuctionRoom({
             myTeamId={myTeam?.teamId}
             leadingTeamId={lot?.status === "OPEN" ? lot.winningTeamId : null}
             creditBudget={creditBudget}
+            teamSize={snapshot.status === "SETUP" ? projectedTeamSize(snapshot) : null}
           />
           {me?.role === "ADMIN" ? (
             <AdminRail snapshot={snapshot} onSnapshot={applySnapshot} />
@@ -244,6 +290,29 @@ function NominationStatus({ snapshot, myTeamId }: {
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Shown during the pause after a result: who nominates next, with a spinner until their
+ * turn opens. The captain who's up gets told directly.
+ */
+function UpNext({ snapshot, myTeamId }: { snapshot: AuctionSnapshot; myTeamId?: number }) {
+  if (snapshot.status !== "LIVE" && snapshot.status !== "PAUSED") return null;
+  const team = snapshot.teams.find((t) => t.teamId === snapshot.turnTeamId);
+  if (!team) return null;
+  const mine = team.teamId === myTeamId;
+  return (
+    <div className="turn-banner" data-mine={mine || undefined} role="status">
+      <span className="up-next-spinner" aria-hidden />
+      {mine ? (
+        <p className="font-display text-2xl uppercase leading-none tracking-wide text-bone">You&rsquo;re up next!</p>
+      ) : (
+        <p className="text-sm text-muted">
+          Up next for nominating: <span className="font-display text-base uppercase tracking-wide text-bone">{team.name}</span>
+        </p>
+      )}
     </div>
   );
 }
@@ -458,6 +527,12 @@ function NomineeDetails({
 
   return (
     <dl className="mt-6 grid gap-x-8 gap-y-5 border-t border-line-soft pt-6 sm:grid-cols-3">
+      {profile.nerfTier ? (
+        <div className="sm:col-span-3">
+          <dt className="eyebrow">Nerf</dt>
+          <dd className="mt-1.5"><NerfLabel tier={profile.nerfTier} /></dd>
+        </div>
+      ) : null}
       <div>
         <dt className="eyebrow">Peak rank</dt>
         <dd className="mt-1.5">
@@ -522,6 +597,7 @@ function NominatedCard({
     <div className="corner-cut bg-panel p-6 sm:p-8">
       <p className="eyebrow">{teamName ? `Nominated by ${teamName}` : "Nominated"}</p>
       <p className="mt-1 text-sm text-muted">Bidding opens once the admin starts the clock.</p>
+      {profile?.nerfTier ? <div className="mt-3"><NerfLabel tier={profile.nerfTier} /></div> : null}
       <div className="mt-5">
         {profile ? (
           <PlayerCard username={profile.username} riotId={profile.riotId} playerCard={profile.playerCard}
@@ -627,8 +703,8 @@ function Countdown({
     const previous = lastSecond.current;
     lastSecond.current = secondNow;
     if (!soundOn || paused || !endsAt || secondNow === previous) return;
+    // The close itself (time up, or won) sounds when the result lands, not at zero here.
     if (secondNow >= 1 && secondNow <= 5) playTick();
-    else if (secondNow === 0 && previous > 0) playTimeUp();
   }, [secondNow, soundOn, paused, endsAt]);
 
   useEffect(() => {
@@ -770,6 +846,7 @@ function BidControls({
               type="button"
               onClick={() => send(option.value)}
               disabled={blocked !== null}
+              {...NO_FORM_RESTORE}
               className={index === 0
                 ? "corner-cut-sm tabular bg-accent px-5 py-2.5 font-display text-base font-semibold uppercase tracking-wider text-white transition-colors hover:bg-accent-deep disabled:cursor-not-allowed disabled:bg-raise disabled:text-dim"
                 : "tabular border border-line px-3 py-2.5 font-display text-xs font-semibold uppercase tracking-wider text-muted transition-colors hover:border-dim hover:text-bone disabled:opacity-30"}
@@ -788,11 +865,13 @@ function BidControls({
               inputMode="numeric"
               placeholder={`${floor}+`}
               disabled={blocked !== null}
+              {...NO_FORM_RESTORE}
               className="tabular w-24 border border-line bg-ink px-3 py-2.5 text-base text-bone placeholder:text-dim focus:border-accent focus:outline-none disabled:opacity-40"
             />
             <button
               type="submit"
               disabled={blocked !== null || amount === "" || Number(amount) < floor || Number(amount) > ceiling}
+              {...NO_FORM_RESTORE}
               className="border border-line px-3 py-2.5 font-display text-xs font-semibold uppercase tracking-wider text-muted transition-colors hover:border-dim hover:text-bone disabled:opacity-30"
             >
               Bid
@@ -897,12 +976,26 @@ function FinalRosters({
 
 /* ------------------------------------------------------------------ the rail */
 
+/**
+ * The team size the draft will set when it starts: everyone seated (the captains) plus
+ * everyone queued, divided across the teams and rounded up, as the server does it. Until
+ * then the stored size is only a default.
+ */
+function projectedTeamSize(snapshot: AuctionSnapshot): number | null {
+  const teams = snapshot.teams.length;
+  if (teams === 0) return null;
+  const seated = snapshot.teams.reduce((n, team) => n + team.rosterCount, 0);
+  const most = Math.max(...snapshot.teams.map((team) => team.rosterCount));
+  return Math.max(most, Math.ceil((seated + snapshot.pendingLots) / teams));
+}
+
 function TeamsRail({
   teams,
   nominatingTeamId,
   myTeamId,
   leadingTeamId,
   creditBudget,
+  teamSize,
 }: {
   teams: AuctionTeamView[];
   /** The team whose captain is nominating right now, if anyone. */
@@ -911,6 +1004,8 @@ function TeamsRail({
   /** Who holds the player up for bidding right now. */
   leadingTeamId: number | null;
   creditBudget: number;
+  /** Before the draft starts, the size it will set; otherwise each team's own. */
+  teamSize: number | null;
 }) {
   return (
     <div className="bg-panel">
@@ -918,7 +1013,8 @@ function TeamsRail({
         <p className="eyebrow">Teams</p>
       </div>
       <ul>
-        {teams.map((team) => {
+        {/* Already in nominating order, so the team that goes first is on top. */}
+        {teams.map((team, index) => {
           const mine = team.teamId === myTeamId;
           const leading = team.teamId === leadingTeamId;
           const spent = creditBudget - team.remainingCredits;
@@ -938,6 +1034,7 @@ function TeamsRail({
                       className="block size-1.5 bg-accent"
                     />
                   ) : null}
+                  <span aria-label={`Nominates ${index + 1}`} className="tabular shrink-0 text-dim">{index + 1}</span>
                   <span className="truncate">{team.name}</span>
                   {mine ? <Tag>You</Tag> : null}
                   {team.teamId === nominatingTeamId ? (
@@ -958,7 +1055,7 @@ function TeamsRail({
 
               <div className="tabular mt-2 flex justify-between text-xs text-dim">
                 <span>
-                  {team.rosterCount}/{team.rosterSize} players
+                  {team.rosterCount}/{teamSize ?? team.rosterSize} players
                 </span>
               </div>
 

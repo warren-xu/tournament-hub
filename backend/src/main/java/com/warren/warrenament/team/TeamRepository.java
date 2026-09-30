@@ -11,7 +11,12 @@ import java.util.Optional;
 
 public interface TeamRepository extends JpaRepository<Team, Long> {
 
-    List<Team> findByTournamentId(Long tournamentId);
+    /** In draft order: the order teams nominate in, and are listed in everywhere. */
+    @Query("select t from Team t where t.tournament.id = :tournamentId order by t.draftOrder, t.id")
+    List<Team> findByTournamentId(@Param("tournamentId") Long tournamentId);
+
+    @Query("select coalesce(max(t.draftOrder), 0) from Team t where t.tournament.id = :tournamentId")
+    int maxDraftOrder(@Param("tournamentId") Long tournamentId);
 
     Optional<Team> findByTournamentIdAndCaptainUserId(Long tournamentId, Long captainUserId);
 

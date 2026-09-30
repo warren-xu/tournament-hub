@@ -83,7 +83,11 @@ export interface ProfileView {
   accentColor: number | null;
   /** ISO timestamp of the last profile save (or creation). */
   updatedAt: string;
+  /** Admin-assigned handicap; null for none. See lib/nerfs. */
+  nerfTier: NerfTier | null;
 }
+
+export type NerfTier = "TIER_1" | "TIER_2";
 
 /** Suggested profile values from a Riot ID's recent games */
 export interface ProfileImport {

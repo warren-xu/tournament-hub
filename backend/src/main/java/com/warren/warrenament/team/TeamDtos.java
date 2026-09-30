@@ -58,4 +58,8 @@ public final class TeamDtos {
 
     public record AssignCaptainRequest(@NotNull Long captainUserId) {
     }
+
+    /** Every team in the tournament, in the order they'll nominate. */
+    public record ReorderTeamsRequest(@NotNull List<@NotNull Long> teamIds) {
+    }
 }

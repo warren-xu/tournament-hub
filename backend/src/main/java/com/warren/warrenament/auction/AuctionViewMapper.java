@@ -116,7 +116,6 @@ public class AuctionViewMapper {
                                     tournament.getRosterSize()),
                             roster);
                 })
-                .sorted((a, b) -> a.name().compareToIgnoreCase(b.name()))
                 .toList();
     }
 
