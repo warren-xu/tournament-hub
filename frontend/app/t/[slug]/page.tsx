@@ -90,7 +90,11 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
   const captainProfileIds = new Set(
     allPlayers.filter((p) => captainUserIds.has(p.userId)).map((p) => p.id),
   );
-  const poolPlayers = isAdmin ? allPlayers : approved.map((r) => r.player);
+  // Everyone else sees the captains plus whoever signed up, each listed once.
+  const poolPlayers = isAdmin ? allPlayers : [
+    ...allPlayers.filter((p) => captainProfileIds.has(p.id)),
+    ...approved.map((r) => r.player).filter((p) => !captainProfileIds.has(p.id)),
+  ];
   // Everyone in the tournament: the captains plus the players waiting to be drafted.
   const signedUpCount = roster.length
     + approved.filter((r) => !captainUserIds.has(r.player.userId)).length;
