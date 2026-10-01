@@ -257,6 +257,8 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
             onTeamIds={roster.flatMap((team) => team.roster.map((m) => m.profileId))}
             isAdmin={isAdmin}
             editable={settingUp}
+            agents={agents ?? []}
+            ranks={ranks ?? []}
           />
         )}
       </section>

@@ -3,8 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Avatar, buttonClass, Tag } from "@/components/ui";
+import { PlayerDialog } from "@/components/player-dialog";
 import { api, ApiCallError } from "@/lib/client-api";
-import type { ProfileView } from "@/lib/types";
+import type { AgentView, ProfileView, RankView } from "@/lib/types";
 
 type Place = "captain" | "drafted" | "queued" | "pool";
 const ORDER: Record<Place, number> = { captain: 0, drafted: 1, queued: 2, pool: 3 };
@@ -22,6 +23,8 @@ export function DraftPool({
   onTeamIds,
   isAdmin,
   editable,
+  agents,
+  ranks,
 }: {
   tournamentId: number;
   profiles: ProfileView[];
@@ -32,12 +35,15 @@ export function DraftPool({
   isAdmin: boolean;
   /** Before the draft starts; afterwards the queue is locked. */
   editable: boolean;
+  agents: AgentView[];
+  ranks: RankView[];
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<number[]>([]);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [opened, setOpened] = useState<ProfileView | null>(null);
 
   const placeOf = (p: ProfileView): Place =>
     captainUserIds.includes(p.userId) ? "captain"
@@ -101,7 +107,11 @@ export function DraftPool({
               <>
                 <Avatar src={p.avatarUrl} name={p.username} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-bone">{p.username}</span>
+                  {/* A button inside the row's label opens the card without ticking the checkbox. */}
+                  <button type="button" onClick={() => setOpened(p)}
+                    className="block max-w-full truncate text-left text-sm text-bone underline-offset-4 hover:text-accent hover:underline focus-visible:underline">
+                    {p.username}
+                  </button>
                   <span className="block truncate text-xs text-dim">
                     {[p.currentRank ?? "No rank set", p.primaryRole].filter(Boolean).join(" · ")}
                   </span>
@@ -134,6 +144,8 @@ export function DraftPool({
           })}
         </ul>
       )}
+
+      <PlayerDialog profile={opened} agents={agents} ranks={ranks} onClose={() => setOpened(null)} />
     </div>
   );
 }
