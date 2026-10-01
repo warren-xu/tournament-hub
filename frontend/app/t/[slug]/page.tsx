@@ -91,6 +91,9 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
     allPlayers.filter((p) => captainUserIds.has(p.userId)).map((p) => p.id),
   );
   const poolPlayers = isAdmin ? allPlayers : approved.map((r) => r.player);
+  // Everyone in the tournament: the captains plus the players waiting to be drafted.
+  const signedUpCount = roster.length
+    + approved.filter((r) => !captainUserIds.has(r.player.userId)).length;
 
   // The pool and teams can change until the draft starts.
   const settingUp = !auction || auction.status === "SETUP";
@@ -226,8 +229,8 @@ export default async function TournamentPage(props: PageProps<"/t/[slug]">) {
         ) : null}
         <SectionHead
           label={isAdmin
-            ? `${approved.length} signed up · ${allPlayers.length} players`
-            : `${approved.length} signed up`}
+            ? `${signedUpCount} signed up · ${allPlayers.length} players`
+            : `${signedUpCount} signed up`}
           title="Draft pool"
         />
         {poolPlayers.length === 0 ? (
