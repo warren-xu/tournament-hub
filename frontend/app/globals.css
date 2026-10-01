@@ -237,6 +237,9 @@
 .pool-tile > .rank-portrait { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* A solid strip along the bottom edge keeps the name off the agent’s face. */
 .pool-tile-tier { --tier-color: var(--color-prestige); position: absolute; top: 6px; left: 6px; z-index: 2; padding: 2px 5px; border: 1px solid var(--tier-color); background: var(--color-ink); color: var(--tier-color); font-family: var(--font-display); font-size: 11px; font-weight: 700; letter-spacing: .08em; line-height: 1; pointer-events: none; }
+.tier-tip { position: relative; display: inline-block; }
+.tier-tip-body { position: absolute; left: 0; top: calc(100% + 6px); z-index: 30; width: max-content; max-width: 240px; padding: 6px 8px; border: 1px solid var(--color-line); background: var(--color-ink); color: var(--color-bone); font-size: 12px; line-height: 1.4; opacity: 0; visibility: hidden; transition: opacity 120ms; pointer-events: none; }
+.tier-tip:hover .tier-tip-body, .tier-tip:focus-within .tier-tip-body { opacity: 1; visibility: visible; }
 .pool-tile-tier[data-tier="TIER_2"] { --tier-color: var(--color-prestige-silver); }
 .pool-tile-identity { position: absolute; right: 4px; bottom: 4px; left: 4px; display: flex; flex-direction: column; padding: 4px 8px; background: var(--color-ink); line-height: 1.25; text-align: left; pointer-events: none; }
 .pool-tile-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: 14px; color: var(--color-bone); }

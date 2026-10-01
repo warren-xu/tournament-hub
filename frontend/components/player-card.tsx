@@ -62,15 +62,22 @@ export function PlayerCard({
     <div className="min-w-0">
       <RankPortrait rank={currentRank} agent={agent} art={playerCard?.largeArt} avatarUrl={avatarUrl} name={mainAgent || username} shape="card" />
       <div className="showcase-identity relative z-20 mt-auto px-4 pb-6 pt-5">
-        <p className="font-display text-[0.625rem] font-semibold uppercase tracking-[0.18em]" style={{ color: agentRoleColor(agent?.role) }}>
-          {agent ? `${agent.role}` : mainAgent || ""}
+        <p className="font-display text-[0.625rem] font-semibold uppercase tracking-[0.18em]" style={{ color: agentRoleColor(primaryRole ?? undefined) }}>
+          {primaryRole ?? ""}
         </p>
         <h3 className="mt-1 break-words font-display text-2xl uppercase leading-none">
           {username}
         </h3>
         {nerfTier ? (
-          <p className={`mt-2 inline-block border px-1.5 py-0.5 font-display text-xs font-semibold uppercase tracking-wider ${TIER_COLOR[nerfTier]}`}>
-            {NERFS[nerfTier].label}
+          // Hovering or focusing the badge spells out what the tier means.
+          <p className="tier-tip mt-2">
+            <span tabIndex={0} aria-describedby="tier-tip-rules"
+              className={`inline-block cursor-help border px-1.5 py-0.5 font-display text-xs font-semibold uppercase tracking-wider ${TIER_COLOR[nerfTier]}`}>
+              {NERFS[nerfTier].label}
+            </span>
+            <span id="tier-tip-rules" role="tooltip" className="tier-tip-body">
+              {NERFS[nerfTier].rules.join(" · ")}
+            </span>
           </p>
         ) : null}
         {split ? null : (
@@ -143,7 +150,6 @@ export function PlayerCard({
                   <Image src={agent.iconUrl} alt="" width={28} height={28} unoptimized className="size-7 border border-line bg-ink" />
                 ) : null}
                 <span>{agent.name}</span>
-                <span className="text-xs" style={{ color: agentRoleColor(agent.role) }}>{agent.role}</span>
               </span>
             ) : mainAgent || "—"}
           </Stat>
