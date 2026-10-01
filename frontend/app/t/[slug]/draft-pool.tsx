@@ -109,7 +109,8 @@ export function DraftPool({
                 <span className="min-w-0 flex-1">
                   {/* A button inside the row's label opens the card without ticking the checkbox. */}
                   <button type="button" onClick={() => setOpened(p)}
-                    className="block max-w-full truncate text-left text-sm text-bone underline-offset-4 hover:text-accent hover:underline focus-visible:underline">
+                    aria-haspopup="dialog"
+                    className="block min-h-0 max-w-full cursor-pointer truncate text-left text-sm text-bone underline-offset-4 hover:text-white hover:underline focus-visible:underline">
                     {p.username}
                   </button>
                   <span className="block truncate text-xs text-dim">
