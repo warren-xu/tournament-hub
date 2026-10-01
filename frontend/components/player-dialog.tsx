@@ -42,6 +42,7 @@ export function PlayerDialog({
           mainAgent={profile.mainAgent} currentRank={profile.currentRank} peakRank={profile.peakRank} agents={agents} ranks={ranks}
           primaryRole={profile.primaryRole} secondaryRole={profile.secondaryRole} agentPool={profile.agents} bio={profile.bio}
           bannerUrl={profile.bannerUrl} bannerColor={profile.accentColor} avatarUrl={profile.avatarUrl}
+          nerfTier={profile.nerfTier}
           layout="split" />
         {footer ? <div className="border-t border-line bg-ink p-3">{footer}</div> : null}
       </div> : null}

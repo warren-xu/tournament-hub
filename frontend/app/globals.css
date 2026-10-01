@@ -16,6 +16,9 @@
 
   /* Draft state dots */
   --color-done: #6fcf8f;
+  /* Tier players' badges: gold for Tier 1, silver for Tier 2. Used nowhere else. */
+  --color-prestige: #e2b857;
+  --color-prestige-silver: #c3ccd4;
   --color-underway: #e8c45a;
 
   --font-display: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
@@ -233,6 +236,8 @@
 .pool-tile:focus-visible .rank-portrait-inner { inset: 7px; }
 .pool-tile > .rank-portrait { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* A solid strip along the bottom edge keeps the name off the agent’s face. */
+.pool-tile-tier { --tier-color: var(--color-prestige); position: absolute; top: 6px; left: 6px; z-index: 2; padding: 2px 5px; border: 1px solid var(--tier-color); background: var(--color-ink); color: var(--tier-color); font-family: var(--font-display); font-size: 11px; font-weight: 700; letter-spacing: .08em; line-height: 1; pointer-events: none; }
+.pool-tile-tier[data-tier="TIER_2"] { --tier-color: var(--color-prestige-silver); }
 .pool-tile-identity { position: absolute; right: 4px; bottom: 4px; left: 4px; display: flex; flex-direction: column; padding: 4px 8px; background: var(--color-ink); line-height: 1.25; text-align: left; pointer-events: none; }
 .pool-tile-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: 14px; color: var(--color-bone); }
 .pool-tile-identity > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }

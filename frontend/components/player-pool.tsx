@@ -11,6 +11,7 @@ import { createCollider, confine, poolHeight, stepPool, POOL_BLOCK, type PoolBod
 import { agentRoleColor, CARD_SQUARE, rankStyle } from "@/lib/rank-style";
 import { useSuggestionsEnabled } from "@/lib/suggestions";
 import type { AgentView, ProfileView, RankView } from "@/lib/types";
+import { NERFS, TIER_SHORT } from "@/lib/nerfs";
 
 /** Which card wears the "Drag me!" bubble. */
 const HINT_INDEX = 0;
@@ -221,7 +222,7 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
           return (
             <li key={p.id} ref={(node) => { slots.current[index] = node; }} className="pool-body"
               style={{ "--rank-color": style.color, "--agent-color": agentRoleColor(agent?.role) } as CSSProperties}>
-              <button type="button" className="pool-tile" aria-label={`${p.username}, ${p.mainAgent || "no main agent"}, ${p.currentRank || "Unranked"}. View player card.`}
+              <button type="button" className="pool-tile" aria-label={`${p.username}, ${p.mainAgent || "no main agent"}, ${p.currentRank || "Unranked"}${p.nerfTier ? `, ${NERFS[p.nerfTier].label}` : ""}. View player card.`}
                 aria-haspopup="dialog" onPointerDown={(event) => startDrag(event, index)} onPointerMove={moveDrag}
                 onPointerUp={(event) => endDrag(event)} onPointerCancel={(event) => endDrag(event, true)}
                 onLostPointerCapture={(event) => endDrag(event, true)}
@@ -230,6 +231,7 @@ export function PlayerPool({ profiles, agents, ranks, isAdmin }: {
                 onFocus={() => { focused.current = index; }} onBlur={() => { focused.current = null; }}
                 onClick={(event) => { if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; return; } openedByPointer.current = event.detail !== 0; setOpened(true); setSelected(p); }}>
                 <RankPortrait rank={p.currentRank} agent={agent} art={p.playerCard?.largeArt} avatarUrl={p.avatarUrl} name={p.mainAgent || p.username} />
+                {p.nerfTier ? <span className="pool-tile-tier" data-tier={p.nerfTier} aria-hidden="true">{TIER_SHORT[p.nerfTier]}</span> : null}
                 <span className="pool-tile-identity">
                   <strong>{p.username}</strong>
                 </span>

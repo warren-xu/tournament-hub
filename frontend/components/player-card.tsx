@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import type { AgentView, PlayerCardView, RankView } from "@/lib/types";
+import type { AgentView, NerfTier, PlayerCardView, RankView } from "@/lib/types";
+import { NERFS, TIER_COLOR } from "@/lib/nerfs";
 import { RankPortrait } from "@/components/rank-portrait";
 import { agentRoleColor, rankStyle } from "@/lib/rank-style";
 
@@ -28,6 +29,7 @@ export function PlayerCard({
   avatarUrl = null,
   bannerColor = null,
   layout = "stacked",
+  nerfTier = null,
 }: {
   username: string;
   riotId: string | null;
@@ -47,6 +49,8 @@ export function PlayerCard({
   /** Discord banner colour (0xRRGGBB), which non-Nitro accounts set instead of an image. */
   bannerColor?: number | null;
   layout?: "stacked" | "split";
+  /** Shown as just "Tier 1" / "Tier 2" under the name. */
+  nerfTier?: NerfTier | null;
 }) {
   const agent = agents.find((a) => a.name.toLowerCase() === mainAgent?.toLowerCase());
   const rank = ranks.find((r) => r.name.toLowerCase() === currentRank?.toLowerCase());
@@ -64,6 +68,11 @@ export function PlayerCard({
         <h3 className="mt-1 break-words font-display text-2xl uppercase leading-none">
           {username}
         </h3>
+        {nerfTier ? (
+          <p className={`mt-2 inline-block border px-1.5 py-0.5 font-display text-xs font-semibold uppercase tracking-wider ${TIER_COLOR[nerfTier]}`}>
+            {NERFS[nerfTier].label}
+          </p>
+        ) : null}
         {split ? null : (
           <>
             <p className="mt-3 flex items-center gap-2 text-sm" style={{ color: accent }}>
