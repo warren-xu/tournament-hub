@@ -51,6 +51,7 @@ public class AuctionViewMapper {
         return new LotView(
                 lot.getId(),
                 lot.getSeq(),
+                pickNumber(lot),
                 lot.getStatus(),
                 PlayerSummary.of(lot.getPlayerProfile()),
                 lot.getWinningBid(),
@@ -59,6 +60,15 @@ public class AuctionViewMapper {
                 nextMinimum(lot, tournament),
                 lot.getEndsAt(),
                 lot.getVersion());
+    }
+
+    /** A sold lot's pick; an open one would be the next pick if it sells. */
+    private Integer pickNumber(Lot lot) {
+        return switch (lot.getStatus()) {
+            case SOLD -> lot.getPickNumber();
+            case OPEN -> (int) lots.countByAuctionIdAndStatus(lot.getAuction().getId(), LotStatus.SOLD) + 1;
+            default -> null;
+        };
     }
 
     /**

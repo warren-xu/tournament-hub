@@ -151,6 +151,8 @@ export interface PlayerSummary {
 export interface LotView {
   lotId: number;
   seq: number;
+  /** The draft pick this is (or will be, while open); null if unsold or still queued. */
+  pick: number | null;
   status: LotStatus;
   player: PlayerSummary;
   /** While open: the current price (0 before any bid). Once closed: what it sold for. */

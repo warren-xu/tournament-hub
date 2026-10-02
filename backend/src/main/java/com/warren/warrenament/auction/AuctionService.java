@@ -443,6 +443,7 @@ public class AuctionService {
             team.setRemainingCredits(team.getRemainingCredits() - price);
             teams.saveAndFlush(team);
             teamMembers.saveAndFlush(new TeamMember(team, lot.getPlayerProfile(), price));
+            lot.setPickNumber((int) lots.countByAuctionIdAndStatus(auction.getId(), LotStatus.SOLD) + 1);
             lot.setStatus(LotStatus.SOLD);
             note = price == 0
                     ? "%s goes to %s (no bids)".formatted(player, team.getName())

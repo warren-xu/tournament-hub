@@ -41,6 +41,10 @@ public class Lot {
     @Column(name = "seq", nullable = false)
     private int seq;
 
+    /** The order this player was drafted in (1 = first sold); null until the lot sells. */
+    @Column(name = "pick_number")
+    private Integer pickNumber;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private LotStatus status = LotStatus.PENDING;

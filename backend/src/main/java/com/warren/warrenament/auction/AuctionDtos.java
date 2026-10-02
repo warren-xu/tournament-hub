@@ -42,6 +42,8 @@ public final class AuctionDtos {
     public record LotView(
             Long lotId,
             int seq,
+            /** The draft pick this is (or will be, while open); null if unsold or still queued. */
+            Integer pick,
             LotStatus status,
             PlayerSummary player,
             int winningBid,

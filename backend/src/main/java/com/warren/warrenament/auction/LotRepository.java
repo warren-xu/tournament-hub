@@ -18,6 +18,8 @@ public interface LotRepository extends JpaRepository<Lot, Long> {
 
     boolean existsByAuctionIdAndStatus(Long auctionId, LotStatus status);
 
+    long countByAuctionIdAndStatus(Long auctionId, LotStatus status);
+
     Optional<Lot> findByAuctionIdAndPlayerProfileId(Long auctionId, Long playerProfileId);
 
     List<Lot> findByPlayerProfileId(Long playerProfileId);

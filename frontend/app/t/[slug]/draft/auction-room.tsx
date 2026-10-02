@@ -443,7 +443,7 @@ function LotCard({
         <div className="flex items-start gap-4">
           <Avatar src={lot.player.avatarUrl} name={lot.player.username} size={64} />
           <div>
-            <p className="eyebrow">Lot {lot.seq}</p>
+            <p className="eyebrow">{lot.pick ? `Pick ${lot.pick}` : "Up for auction"}</p>
             <h2 className="mt-1 text-4xl uppercase leading-none tracking-tight sm:text-5xl">
               <PlayerName profileId={lot.player.profileId}>{lot.player.username}</PlayerName>
             </h2>
@@ -642,7 +642,7 @@ function ResultCard({
         <div className="flex items-start gap-4">
           <Avatar src={lot.player.avatarUrl} name={lot.player.username} size={56} />
           <div>
-            <p className="eyebrow">Lot {lot.seq} · result</p>
+            <p className="eyebrow">{sold && lot.pick ? `Pick ${lot.pick}` : "Unsold"} · result</p>
             <h2 className="mt-1 text-4xl uppercase leading-none tracking-tight">
               <PlayerName profileId={lot.player.profileId}>{lot.player.username}</PlayerName>
             </h2>
